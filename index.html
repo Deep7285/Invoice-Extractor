@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Invoice Extractor </title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- pdf.js (PDF -> images) -->
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+  </script>
+
+  <!-- Mammoth (DOCX -> text) -->
+  <script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
+
+  <!-- SheetJS (Excel) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.19.3/xlsx.full.min.js"></script>
+
+  <style>
+    :root { --pad:14px; --bg:#0b1020; --fg:#e9eef6; --muted:#96a3b8; --accent:#5cc8ff; }
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:system-ui,Arial,sans-serif}
+    .wrap{max-width:960px;margin:32px auto;padding:0 var(--pad)}
+    h1{margin:0 0 16px;font-size:26px}
+    .card{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);
+          border-radius:12px;padding:18px;box-shadow:0 4px 16px rgba(0,0,0,.25)}
+    .row{margin-top:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    button{background:var(--accent);color:#001019;border:none;padding:10px 16px;border-radius:8px;font-weight:600;cursor:pointer}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .hint{color:var(--muted);font-size:13px}
+    #status{margin-top:10px;font-size:14px}
+    .log{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:rgba(0,0,0,.25);
+         padding:12px;border-radius:10px;white-space:pre-wrap;max-height:220px;overflow:auto}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Invoice Extractor</h1>
+    <div class="card">
+      <div class="row">
+        <input id="fileInput" type="file" multiple accept=".pdf,.docx,image/*">
+        <button id="runBtn">Extract</button>
+      </div>
+      <div class="row hint">
+        • PDF pages are limited to 10 per file • JPG/PNG supported • DOCX text is extracted client-side
+      </div>
+      <div id="status" class="row"></div>
+      <div id="log" class="log" hidden></div>
+    </div>
+  </div>
+
+  <script>
+    // ============== CONFIG ==============
+    // During local dev use: "http://127.0.0.1:8787"
+    // For GitHub Pages, set your deployed workers.dev URL below:
+    var WORKER_ENDPOINT = "https://invoice-worker.deepak72855.workers.dev";
+
+    // limit & compression
+    var MAX_PAGES = 10;
+    var JPEG_QUALITY = 0.7;
+    var TARGET_WIDTH = 1300;
+
+    // ============== DOM refs ==============
+    var fileInput = document.getElementById("fileInput");
+    var runBtn = document.getElementById("runBtn");
+    var statusEl = document.getElementById("status");
+    var logEl = document.getElementById("log");
+
+    function setStatus(msg){ statusEl.textContent = msg; }
+    function log(msg){ logEl.hidden = false; logEl.textContent += msg + "\n"; }
+
+    // ========= helpers =========
+    function fileToDataUrl(file){
+      return new Promise(function(resolve){
+        var r = new FileReader();
+        r.onload = function(e){ resolve(e.target.result); };
+        r.readAsDataURL(file);
+      });
+    }
+
+    async function pdfToImages(file){
+      var dataUrl = await fileToDataUrl(file);
+      var pdf = await pdfjsLib.getDocument({ url: dataUrl }).promise;
+      var pages = Math.min(pdf.numPages, MAX_PAGES);
+      var out = [];
+      for (var p = 1; p <= pages; p++){
+        var page = await pdf.getPage(p);
+        var viewport = page.getViewport({ scale: 1.5 });
+        var scale = TARGET_WIDTH / viewport.width;
+        var vp = page.getViewport({ scale: scale });
+
+        var canvas = document.createElement("canvas");
+        var ctx = canvas.getContext("2d");
+        canvas.width = Math.floor(vp.width);
+        canvas.height = Math.floor(vp.height);
+
+        await page.render({ canvasContext: ctx, viewport: vp }).promise;
+        var jpeg = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
+        out.push(jpeg);
+      }
+      return out;
+    }
+
+    async function imageToCompressedDataUrl(file){
+      var dataUrl = await fileToDataUrl(file);
+      var img = new Image();
+      await new Promise(function(res){ img.onload = res; img.src = dataUrl; });
+      var scale = img.width > TARGET_WIDTH ? TARGET_WIDTH / img.width : 1;
+      var canvas = document.createElement("canvas");
+      canvas.width = Math.floor(img.width * scale);
+      canvas.height = Math.floor(img.height * scale);
+      var ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", JPEG_QUALITY);
+    }
+
+    async function docxToText(file){
+      var arrayBuffer = await file.arrayBuffer();
+      var result = await window.mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+      return result.value || "";
+    }
+
+    async function postToWorker(payload){
+      var form = new FormData();
+      var i;
+      if (payload.imagesDataUrls && payload.imagesDataUrls.length){
+        for (i=0;i<payload.imagesDataUrls.length;i++){
+          form.append("images_dataurl[]", payload.imagesDataUrls[i]);
+        }
+      }
+      if (payload.docText && payload.docText.trim()){
+        form.append("doc_text", payload.docText.trim());
+      }
+
+      console.log("POST", WORKER_ENDPOINT + "/api/extract",
+                  {images:(payload.imagesDataUrls||[]).length, hasDocText:!!payload.docText});
+
+      var resp = await fetch(WORKER_ENDPOINT + "/api/extract", { method:"POST", body: form });
+      if (!resp.ok){
+        var t = "";
+        try { t = await resp.text(); } catch(e){}
+        throw new Error("Worker " + resp.status + ": " + t);
+      }
+      return resp.json();
+    }
+
+    function rowFromJson(json, source){
+      var seller = json && json.seller ? json.seller : {};
+      var invoice = json && json.invoice ? json.invoice : {};
+      var amounts = json && json.amounts ? json.amounts : {};
+      var taxes = (json && Array.isArray(json.taxes)) ? json.taxes : [];
+      var pieces = [];
+      for (var i=0;i<taxes.length;i++){
+        var t = taxes[i];
+        var rp = (t.rate_percent != null) ? t.rate_percent : "null";
+        var amt = (t.amount != null) ? t.amount : "null";
+        pieces.push((t.type || "TAX") + " " + rp + "%:" + amt);
+      }
+      return {
+        SELLER_NAME: seller.company_name || null,
+        SELLER_GSTIN: seller.gstin || null,
+        SELLER_ADDRESS: seller.address || null,
+        INVOICE_NUMBER: invoice.number || null,
+        INVOICE_DATE: invoice.date || null,
+        TRANSACTION_ID: invoice.transaction_id || null,
+        TAXABLE_AMOUNT: (amounts.taxable_amount != null) ? amounts.taxable_amount : null,
+        TOTAL_AMOUNT: (amounts.total_amount != null) ? amounts.total_amount : null,
+        TAX_BREAKDOWN: pieces.length ? pieces.join("; ") : null,
+        SOURCE_FILE: source || null
+      };
+    }
+
+    function downloadExcel(rows, filename){
+      var ws = XLSX.utils.json_to_sheet(rows);
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Invoices");
+      XLSX.writeFile(wb, filename || "invoices_gpt.xlsx");
+    }
+
+    // ========= main click =========
+    runBtn.addEventListener("click", async function(){
+      try{
+        runBtn.disabled = true;
+        logEl.textContent = ""; logEl.hidden = true;
+        setStatus("Processing...");
+        var files = Array.prototype.slice.call(fileInput.files || []);
+        if (!files.length) throw new Error("Select at least one file");
+
+        var rows = [];
+        for (var k=0;k<files.length;k++){
+          var f = files[k];
+          setStatus("Processing " + f.name + "...");
+          log("-> " + f.name);
+
+          var payload = { imagesDataUrls: [], docText: "" };
+
+          if (f.type === "application/pdf"){
+            payload.imagesDataUrls = await pdfToImages(f);
+            log("   PDF pages -> " + payload.imagesDataUrls.length + " image(s)");
+          } else if (f.type && f.type.indexOf("image/") === 0){
+            payload.imagesDataUrls = [ await imageToCompressedDataUrl(f) ];
+            log("   Image compressed");
+          } else if (f.name && f.name.toLowerCase().endsWith(".docx")){
+            payload.docText = await docxToText(f);
+            log("   DOCX text extracted");
+          } else {
+            log("   Skipped unsupported file: " + f.name);
+            continue;
+          }
+
+          var json = await postToWorker(payload);
+          rows.push(rowFromJson(json, f.name));
+          log("   ✓ extracted");
+        }
+
+        if (rows.length){
+          downloadExcel(rows);
+          setStatus("Done. Excel downloaded.");
+        } else {
+          setStatus("No supported files processed.");
+        }
+      } catch(e){
+        console.error(e);
+        setStatus("Error: " + e.message);
+        log("Error: " + e.message);
+      } finally {
+        runBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
