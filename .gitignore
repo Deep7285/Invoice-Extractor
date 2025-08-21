@@ -1,0 +1,9 @@
+# Git will ignore everything in this folder
+node_modules/
+
+# Ignore .env files
+.env
+*.env
+
+# Ignore specific files
+.dev.vars

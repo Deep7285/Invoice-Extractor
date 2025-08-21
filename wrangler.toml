@@ -1,0 +1,9 @@
+name = "invoice-worker"
+main = "src/worker.ts"
+compatibility_date = "2024-09-10"
+
+[vars]
+# Set this to your GitHub Pages site origin:
+# For user/organization pages: https://<username>.github.io
+# For project pages:          https://<username>.github.io/<repo>
+ALLOWED_ORIGIN = "https://deep7285.github.io" 
