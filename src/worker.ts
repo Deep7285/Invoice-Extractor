@@ -5,7 +5,7 @@ type Env = {
   ALLOWED_ORIGIN?: string;
 };
 
-const MODEL = "gpt-4o-mini"; // upgrade to "gpt-4o" if needed
+const MODEL = "gpt-4o-mini";
 
 function cors(h: Headers, origin?: string) {
   h.set("Access-Control-Allow-Origin", origin ?? "*");
@@ -36,29 +36,27 @@ export default {
       cors(r.headers, origin);
       return r;
     }
-    if (req.method !== "POST") {
+    if (req.method !== "POST" || new URL(req.url).pathname !== "/api/extract") {
       const r = new Response("Use POST /api/extract", { status: 405 });
       cors(r.headers, origin);
       return r;
     }
 
-    try {
-      const ctype = req.headers.get("content-type") || "";
-      if (!ctype.includes("multipart/form-data")) {
-        const r = new Response("Expected multipart/form-data", { status: 400 });
-        cors(r.headers, origin);
-        return r;
-      }
+    // ---- API key guard (TEMP for diagnosis) ----
+    const apiKey = (env.OPENAI_API_KEY || "").trim();
+    if (!apiKey || apiKey.length < 30) {
+      const r = new Response(
+        `OPENAI_API_KEY misconfigured on worker (length=${apiKey.length}). ` +
+        `Set with: npx wrangler secret put OPENAI_API_KEY`, { status: 500 }
+      );
+      cors(r.headers, origin);
+      return r;
+    }
 
+    try {
       const form = await req.formData();
 
-      // 1) Optional DOCX text (extracted on the client)
-      const docTextRaw = form.get("doc_text");
-      const docText = typeof docTextRaw === "string" && docTextRaw.trim() ? docTextRaw.trim() : null;
-
-      // 2) Images (PDF pages rendered client-side, or direct JPG/PNG)
       const images: Array<{ type: "image_url"; image_url: { url: string } }> = [];
-
       const dataurlList = form.getAll("images_dataurl[]");
       for (const v of dataurlList) {
         if (typeof v === "string" && v.startsWith("data:image/")) {
@@ -72,19 +70,9 @@ export default {
           images.push({ type: "image_url", image_url: { url: dataUrl } });
         }
       }
-      // Aliases for Postman testing
-      const singleFile = form.get("file");
-      if (singleFile instanceof File) {
-        const dataUrl = await fileToDataUrlSafe(singleFile);
-        images.push({ type: "image_url", image_url: { url: dataUrl } });
-      }
-      const filesArray = form.getAll("files[]");
-      for (const v of filesArray) {
-        if (v instanceof File) {
-          const dataUrl = await fileToDataUrlSafe(v);
-          images.push({ type: "image_url", image_url: { url: dataUrl } });
-        }
-      }
+
+      const docTextRaw = form.get("doc_text");
+      const docText = typeof docTextRaw === "string" && docTextRaw.trim() ? docTextRaw.trim() : null;
 
       if (!docText && images.length === 0) {
         const r = new Response("Provide at least doc_text or one image.", { status: 400 });
@@ -97,7 +85,6 @@ export default {
         return r;
       }
 
-      // Build Chat Completions payload
       const userContent: any[] = [{ type: "text", text: USER_INSTRUCTIONS }];
       if (docText) userContent.push({ type: "text", text: docText });
       if (images.length) userContent.push(...images);
@@ -122,14 +109,19 @@ export default {
       const oai = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+          "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json"
+          // If you are using a specific Organization or need Project header, you can add:
+          // "OpenAI-Organization": "<org_id>",
+          // "OpenAI-Project": "<project_id>",
         },
         body: JSON.stringify(payload)
       });
 
       if (!oai.ok) {
         const errText = await oai.text();
+        // view this with: npx wrangler tail
+        console.error("OpenAI error:", oai.status, errText);
         const r = new Response(`OpenAI error: ${oai.status} ${errText}`, { status: 502 });
         cors(r.headers, origin);
         return r;
@@ -144,8 +136,9 @@ export default {
       return r;
 
     } catch (e: any) {
+      console.error("Worker exception:", e?.stack || e);
       const r = new Response(`Worker error: ${e?.message ?? e}`, { status: 500 });
-      cors(r.headers, env.ALLOWED_ORIGIN || "*");
+      cors(r.headers, origin);
       return r;
     }
   }
