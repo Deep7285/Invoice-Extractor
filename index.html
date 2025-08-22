@@ -18,8 +18,8 @@
   <style>
     :root{
       /* Brand */
-      --bg:#0E1525;          /* page background (dark) */
-      --surface:#ffffff;     /* white cards/header/footer */
+      --bg:#345091;          /* page background*/
+      --surface:#f4eded;     /* cards/header/footer */
       --ink:#0f172a;         /* dark text on white */
       --muted:#5b6578;
       --accent:#3b82f6;      /* blue */
@@ -29,8 +29,8 @@
       --err:#ef4444;
 
       --radius:14px;
-      --shadow:0 8px 24px rgba(0,0,0,.12);
-      --shadow-soft:0 4px 12px rgba(0,0,0,.08);
+      --shadow:0 8px 24px rgba(36, 33, 33, 0.12);
+      --shadow-soft:0 4px 12px rgba(46, 42, 42, 0.08);
     }
 
     html,body{margin:0;padding:0;background:var(--bg);color:#e9eef6;font-family:system-ui,Segoe UI,Inter,Arial,sans-serif}
@@ -38,7 +38,7 @@
     a:hover{color:var(--accent-600)}
     .container{max-width:1140px;margin:0 auto;padding:0 20px}
 
-    /* Header / Footer (white) */
+    /* Header / Footer */
     .site-header,.site-footer{
       position:sticky; top:0; z-index:10; background:var(--surface); color:var(--ink);
       box-shadow:var(--shadow-soft);
@@ -112,9 +112,9 @@
   <main id="homePage" class="container hero">
     <div class="hero-grid">
       <div class="card">
-        <h1>Extract data from your invoices</h1>
+        <h1>Extract data from your files with the power of AI</h1>
         <p class="lead">
-          Upload PDF / images / DOCX and get a clean Excel file with seller details,
+          Upload PDF / image(jpeg/jpg/png) / DOCX and get details in a clean Excel file,
           GSTIN, invoice number &amp; date, transaction id, taxable &amp; total amounts,
           and full tax breakdown.
         </p>
@@ -122,7 +122,7 @@
           <a class="btn" href="#" data-link="extract">Go to invoice data extraction</a>
           <a class="btn btn-ghost" href="mailto:deepak72855@gmail.com">Contact</a>
         </div>
-        <p class="tagline">Tip: nothing is stored server-side; files are processed in memory and discarded after extraction.</p>
+        <p class="tagline">Note: This website does not store any files; all files are processed in memory and discarded after extraction.</p>
       </div>
       <div class="card">
         <img class="hero-img" alt="Upload flow"
