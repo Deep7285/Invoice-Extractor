@@ -1,286 +1,384 @@
-<!-- This is the HTML file of Invoice extractor for the front page -->
-
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Invoice Extractor </title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="utf-8" />
+  <title>Data Extractor – Invoice OCR to Excel</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- pdf.js (PDF -> images) -->
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
-  <script>
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
-  </script>
+  <script>pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";</script>
 
   <!-- Mammoth (DOCX -> text) -->
   <script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
 
-  <!-- SheetJS (Excel) LOADER — tries multiple CDNs and sets window.XLSX when ready -->
-  <script>
-    (function loadSheetJS() {
-      const sources = [
-        "https://cdn.jsdelivr.net/npm/xlsx@0.20.3/dist/xlsx.full.min.js",
-        "https://unpkg.com/xlsx@0.20.3/dist/xlsx.full.min.js",
-        "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.20.3/xlsx.full.min.js"
-      ];
-      let i = 0;
-      function tryNext() {
-        if (typeof window.XLSX !== "undefined") return; // already loaded
-        if (i >= sources.length) return;               // give up (we’ll CSV fallback)
-        const s = document.createElement("script");
-        s.src = sources[i++];
-        s.async = true;
-        s.onload = () => { /* XLSX now available */ };
-        s.onerror = () => { console.warn("Failed to load:", s.src); tryNext(); };
-        document.head.appendChild(s);
-      }
-      tryNext();
-    })();
-  </script>
+  <!-- SheetJS (Excel) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
 
   <style>
-    :root { --pad:14px; --bg:#0b1020; --fg:#e9eef6; --muted:#96a3b8; --accent:#5cc8ff; }
-    html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:system-ui,Arial,sans-serif}
-    .wrap{max-width:960px;margin:32px auto;padding:0 var(--pad)}
-    h1{margin:0 0 16px;font-size:26px}
-    .card{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);
-          border-radius:12px;padding:18px;box-shadow:0 4px 16px rgba(0,0,0,.25)}
-    .row{margin-top:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-    button{background:var(--accent);color:#001019;border:none;padding:10px 16px;border-radius:8px;font-weight:600;cursor:pointer}
-    button:disabled{opacity:.5;cursor:not-allowed}
-    .hint{color:var(--muted);font-size:13px}
-    #status{margin-top:10px;font-size:14px}
-    .log{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:rgba(0,0,0,.25);
-         padding:12px;border-radius:10px;white-space:pre-wrap;max-height:220px;overflow:auto}
+    :root{
+      /* Brand */
+      --bg:#345091;          /* page background*/
+      --surface:#f4eded;     /* cards/header/footer */
+      --ink:#0f172a;         /* dark text on white */
+      --muted:#5b6578;
+      --accent:#3b82f6;      /* blue */
+      --accent-600:#2563eb;
+      --ok:#16a34a;
+      --warn:#f59e0b;
+      --err:#ef4444;
+
+      --radius:14px;
+      --shadow:0 8px 24px rgba(36, 33, 33, 0.12);
+      --shadow-soft:0 4px 12px rgba(46, 42, 42, 0.08);
+    }
+
+    html,body{margin:0;padding:0;background:var(--bg);color:#e9eef6;font-family:system-ui,Segoe UI,Inter,Arial,sans-serif}
+    a{color:var(--accent);text-decoration:none}
+    a:hover{color:var(--accent-600)}
+    .container{max-width:1140px;margin:0 auto;padding:0 20px}
+
+    /* Header / Footer */
+    .site-header,.site-footer{
+      position:sticky; top:0; z-index:10; background:var(--surface); color:var(--ink);
+      box-shadow:var(--shadow-soft);
+    }
+    .site-footer{position:static; margin-top:48px}
+    .bar{display:flex;align-items:center;justify-content:space-between; height:64px}
+    .brand{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--ink)}
+    .brand .logo{width:28px;height:28px;border-radius:6px;object-fit:cover}
+    nav a{color:var(--ink); margin-left:18px; font-weight:600; opacity:.9}
+    nav a:hover{opacity:1}
+    .btn-outline{border:1px solid #e5e7eb;padding:8px 14px;border-radius:10px;background:#fff;color:var(--ink)}
+    .btn-outline:hover{border-color:#cbd5e1}
+
+    /* Hero */
+    .hero{padding:48px 0}
+    .hero-grid{display:grid;grid-template-columns:1.2fr 1fr;gap:28px;align-items:center}
+    .card{background:var(--surface);color:var(--ink);border-radius:var(--radius);box-shadow:var(--shadow);padding:28px}
+    h1{font-size:32px;margin:0 0 14px}
+    .lead{color:#334155; line-height:1.6}
+    .cta-row{margin-top:22px;display:flex;gap:14px;flex-wrap:wrap}
+    .btn{background:var(--accent);border:none;color:#fff;padding:12px 18px;border-radius:12px;font-weight:700;cursor:pointer}
+    .btn:hover{background:var(--accent-600)}
+    .btn-ghost{background:transparent;border:1px solid #e2e8f0;color:var(--ink)}
+    .tagline{font-size:12px;color:#6b7280;margin-top:12px}
+    .hero-img{width:100%;height:auto;border-radius:var(--radius);box-shadow:var(--shadow)}
+
+    /* Extractor section */
+    .section{padding:28px 0 0}
+    .panel{background:var(--surface);color:var(--ink);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px}
+    .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .note{color:#475569;font-size:14px}
+    .countpill{background:#eef2ff;color:#3730a3;border-radius:999px;padding:6px 10px;font-weight:700}
+    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+
+    /* Activity timeline */
+    .activity{margin-top:16px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0; padding:12px}
+    .item{display:flex;align-items:flex-start;gap:8px;margin:6px 0}
+    .dot{width:8px;height:8px;border-radius:20px;margin-top:7px}
+    .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.err{background:var(--err)}
+    .mono{font-family:ui-monospace,Menlo,Consolas,monospace;color:#1f2937}
+    details.debug{margin-top:10px}
+
+    /* Table */
+    table{width:100%;border-collapse:separate;border-spacing:0;overflow:auto}
+    thead th{position:sticky;top:0;background:#f1f5f9;color:#0f172a;text-align:left;padding:10px;border-bottom:1px solid #e2e8f0}
+    tbody td{padding:10px;border-bottom:1px solid #eef2f7;color:#111827;background:#fff}
+    .tablewrap{margin-top:16px;border-radius:12px;overflow:auto;border:1px solid #e5e7eb}
+
+    /* Utility */
+    .hidden{display:none !important}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Invoice Extractor</h1>
-    <div class="card">
-      <div class="row">
-        <input id="fileInput" type="file" multiple accept=".pdf,.docx,image/*">
-        <button id="runBtn">Extract</button>
+
+  <!-- HEADER -->
+  <header class="site-header">
+    <div class="container bar">
+      <div class="brand">
+        <img src="assets/logo.png" alt="Data Extractor" class="logo" />
+        <span>Data Extractor</span>
       </div>
-      <div class="row hint">
-        • PDF pages are limited to 10 per file • JPG/PNG supported • DOCX text is extracted client-side
-      </div>
-      <div id="status" class="row"></div>
-      <div id="log" class="log" hidden></div>
+      <nav>
+        <a href="#" data-link="home">Home</a>
+        <a href="#" data-link="extract">Invoice data extraction</a>
+        <a class="btn-outline" href="#" aria-disabled="true">Login</a>
+      </nav>
     </div>
-  </div>
+  </header>
+
+  <!-- HOME -->
+  <main id="homePage" class="container hero">
+    <div class="hero-grid">
+      <div class="card">
+        <h1>Extract Data From Your Files ith the AI Powered OCR</h1>
+        <p class="lead">
+          Upload PDF / image(jpeg/jpg/png) / DOCX and get details such as GSTIN, invoice number &amp; date, transaction id, taxable &amp; total amounts,
+          and full tax breakdown in a clean Excel file.
+        </p>
+        <div class="cta-row">
+          <a class="btn" href="#" data-link="extract">Go to invoice data extraction</a>
+          <a class="btn btn-ghost" href="mailto:deepak72855@gmail.com">Contact</a>
+        </div>
+        <p class="tagline">Note: This website does not store any files; all files are processed in memory and discarded after extraction.</p>
+      </div>
+      <div class="card">
+        <img class="hero-img" alt="Upload flow"
+             src="https://images.unsplash.com/photo-1553877522-43269d4ea984?q=80&w=1200&auto=format&fit=crop" />
+      </div>
+    </div>
+  </main>
+
+  <!-- EXTRACTOR -->
+  <section id="extractPage" class="container section hidden">
+    <div class="panel">
+      <h2 style="margin:6px 0 12px">Invoice Extractor</h2>
+      <p class="note">Please upload PDF / image (jpg/jpeg/png) / DOCX. One PDF may contain up to <strong>10 pages</strong>.</p>
+
+      <div class="row" style="margin-top:10px">
+        <input id="fileInput" type="file" multiple accept=".pdf,.docx,image/*" />
+        <button id="runBtn" class="btn">Extract</button>
+        <span id="rowCount" class="countpill hidden">0 rows</span>
+      </div>
+
+      <div class="actions">
+        <button id="reviewBtn" class="btn btn-ghost hidden">Review Excel</button>
+        <button id="downloadBtn" class="btn hidden">Download Excel</button>
+        <button id="resetBtn" class="btn btn-ghost">Reset session</button>
+      </div>
+
+      <div id="activity" class="activity">
+        <!-- activity items appended here -->
+      </div>
+
+      <details class="debug">
+        <summary>Debug log</summary>
+        <pre id="debugLog" class="mono" style="white-space:pre-wrap"></pre>
+      </details>
+
+      <div id="tableWrap" class="tablewrap hidden">
+        <table id="resultTable">
+          <thead>
+          <tr>
+            <th>SELLER_NAME</th>
+            <th>SELLER_GSTIN</th>
+            <th>SELLER_ADDRESS</th>
+            <th>INVOICE_NUMBER</th>
+            <th>INVOICE_DATE</th>
+            <th>TRANSACTION_ID</th>
+            <th>TAXABLE_AMOUNT</th>
+            <th>TOTAL_AMOUNT</th>
+            <th>TAX_BREAKDOWN</th>
+            <th>SOURCE_FILE</th>
+          </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="site-footer">
+    <div class="container bar" style="height:56px">
+      <small style="color:#475569">© 2025 Data Extractor</small>
+      <div style="display:flex;gap:18px">
+        <a href="mailto:deepak72855@gmail.com">deepak72855@gmail.com</a>
+        <a href="https://www.linkedin.com/in/deepak8439/" target="_blank" rel="noopener">LinkedIn</a>
+      </div>
+    </div>
+  </footer>
 
   <script>
-    // ============== CONFIG ==============
-    // During local dev use: "http://127.0.0.1:8787"
-    // For GitHub Pages, set your deployed workers.dev URL below:
-    var WORKER_ENDPOINT = "https://invoice-worker.deepak72855.workers.dev";
+    /* ---------------------- ROUTING ---------------------- */
+    const homePage   = document.getElementById('homePage');
+    const extractPage= document.getElementById('extractPage');
+    document.querySelectorAll('[data-link]').forEach(a=>{
+      a.addEventListener('click',e=>{
+        e.preventDefault();
+        const dest = a.getAttribute('data-link');
+        if(dest==='extract'){ homePage.classList.add('hidden'); extractPage.classList.remove('hidden'); }
+        else { extractPage.classList.add('hidden'); homePage.classList.remove('hidden'); }
+        window.scrollTo(0,0);
+      });
+    });
 
-    // limit & compression
-    var MAX_PAGES = 10;
-    var JPEG_QUALITY = 0.7;
-    var TARGET_WIDTH = 1300;
+    /* ---------------- CONFIG ---------------- */
+    const WORKER_ENDPOINT = "https://invoice-worker.deepak72855.workers.dev";
+    const MAX_PAGES = 10, JPEG_QUALITY = 0.7, TARGET_WIDTH = 1300;
 
-    // ============== DOM refs ==============
-    var fileInput = document.getElementById("fileInput");
-    var runBtn = document.getElementById("runBtn");
-    var statusEl = document.getElementById("status");
-    var logEl = document.getElementById("log");
+    /* -------------- DOM refs --------------- */
+    const fileInput   = document.getElementById('fileInput');
+    const runBtn      = document.getElementById('runBtn');
+    const reviewBtn   = document.getElementById('reviewBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const resetBtn    = document.getElementById('resetBtn');
+    const rowCount    = document.getElementById('rowCount');
+    const activityBox = document.getElementById('activity');
+    const debugLog    = document.getElementById('debugLog');
+    const tableWrap   = document.getElementById('tableWrap');
+    const tbody       = document.querySelector('#resultTable tbody');
 
-    function setStatus(msg){ statusEl.textContent = msg; }
-    function log(msg){ logEl.hidden = false; logEl.textContent += msg + "\n"; }
+    const rows = [];   // session rows
 
-    // ========= helpers =========
+    function logDbg(msg){ debugLog.textContent += msg + "\\n"; }
+    function addItem(kind, text){
+      const div = document.createElement('div');
+      div.className='item';
+      const dot = document.createElement('span'); dot.className=`dot ${kind}`; div.appendChild(dot);
+      const p = document.createElement('div'); p.textContent = text; p.className='mono'; div.appendChild(p);
+      activityBox.appendChild(div);
+    }
+    function setRowCount(){ rowCount.textContent = rows.length+' rows'; rowCount.classList.toggle('hidden', rows.length===0); }
+
+    /* -------------- helpers --------------- */
     function fileToDataUrl(file){
-      return new Promise(function(resolve){
-        var r = new FileReader();
-        r.onload = function(e){ resolve(e.target.result); };
-        r.readAsDataURL(file);
+      return new Promise(res=>{
+        const r=new FileReader(); r.onload=e=>res(e.target.result); r.readAsDataURL(file);
       });
     }
-
     async function pdfToImages(file){
-      var dataUrl = await fileToDataUrl(file);
-      var pdf = await pdfjsLib.getDocument({ url: dataUrl }).promise;
-      var pages = Math.min(pdf.numPages, MAX_PAGES);
-      var out = [];
-      for (var p = 1; p <= pages; p++){
-        var page = await pdf.getPage(p);
-        var viewport = page.getViewport({ scale: 1.5 });
-        var scale = TARGET_WIDTH / viewport.width;
-        var vp = page.getViewport({ scale: scale });
-
-        var canvas = document.createElement("canvas");
-        var ctx = canvas.getContext("2d");
-        canvas.width = Math.floor(vp.width);
-        canvas.height = Math.floor(vp.height);
-
-        await page.render({ canvasContext: ctx, viewport: vp }).promise;
-        var jpeg = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
-        out.push(jpeg);
+      const dataUrl = await fileToDataUrl(file);
+      const pdf = await pdfjsLib.getDocument({ url:dataUrl }).promise;
+      const pages = Math.min(pdf.numPages, MAX_PAGES);
+      const out = [];
+      for(let p=1;p<=pages;p++){
+        const page = await pdf.getPage(p);
+        const viewport = page.getViewport({ scale:1.5 });
+        const scale = TARGET_WIDTH/viewport.width;
+        const vp = page.getViewport({ scale });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+        const ctx = canvas.getContext('2d');
+        await page.render({canvasContext:ctx, viewport:vp}).promise;
+        out.push(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
       }
       return out;
     }
-
-    async function imageToCompressedDataUrl(file){
-      var dataUrl = await fileToDataUrl(file);
-      var img = new Image();
-      await new Promise(function(res){ img.onload = res; img.src = dataUrl; });
-      var scale = img.width > TARGET_WIDTH ? TARGET_WIDTH / img.width : 1;
-      var canvas = document.createElement("canvas");
-      canvas.width = Math.floor(img.width * scale);
-      canvas.height = Math.floor(img.height * scale);
-      var ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      return canvas.toDataURL("image/jpeg", JPEG_QUALITY);
+    async function imageToDataUrl(file){
+      const dataUrl = await fileToDataUrl(file);
+      const img = new Image();
+      await new Promise(r=>{ img.onload=r; img.src=dataUrl; });
+      const scale = img.width> TARGET_WIDTH ? TARGET_WIDTH/img.width : 1;
+      const c=document.createElement('canvas'); c.width=img.width*scale; c.height=img.height*scale;
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      return c.toDataURL('image/jpeg', JPEG_QUALITY);
     }
-
     async function docxToText(file){
-      var arrayBuffer = await file.arrayBuffer();
-      var result = await window.mammoth.extractRawText({ arrayBuffer: arrayBuffer });
-      return result.value || "";
+      const buf = await file.arrayBuffer();
+      const res = await window.mammoth.extractRawText({arrayBuffer:buf});
+      return res.value || "";
     }
-
     async function postToWorker(payload){
-      var form = new FormData();
-      var i;
-      if (payload.imagesDataUrls && payload.imagesDataUrls.length){
-        for (i=0;i<payload.imagesDataUrls.length;i++){
-          form.append("images_dataurl[]", payload.imagesDataUrls[i]);
-        }
-      }
-      if (payload.docText && payload.docText.trim()){
-        form.append("doc_text", payload.docText.trim());
-      }
-
-      console.log("POST", WORKER_ENDPOINT + "/api/extract",
-                  {images:(payload.imagesDataUrls||[]).length, hasDocText:!!payload.docText});
-
-      var resp = await fetch(WORKER_ENDPOINT + "/api/extract", { method:"POST", body: form });
-      if (!resp.ok){
-        var t = "";
-        try { t = await resp.text(); } catch(e){}
-        throw new Error("Worker " + resp.status + ": " + t);
-      }
+      const form = new FormData();
+      (payload.imagesDataUrls||[]).forEach(d=>form.append('images_dataurl[]', d));
+      if(payload.docText) form.append('doc_text', payload.docText);
+      const resp = await fetch(WORKER_ENDPOINT + "/api/extract", { method:"POST", body:form });
+      if(!resp.ok){ const t = await resp.text().catch(()=> ""); throw new Error("Worker "+resp.status+": "+t); }
       return resp.json();
     }
-
     function rowFromJson(json, source){
-      var seller = json && json.seller ? json.seller : {};
-      var invoice = json && json.invoice ? json.invoice : {};
-      var amounts = json && json.amounts ? json.amounts : {};
-      var taxes = (json && Array.isArray(json.taxes)) ? json.taxes : [];
-      var pieces = [];
-      for (var i=0;i<taxes.length;i++){
-        var t = taxes[i];
-        var rp = (t.rate_percent != null) ? t.rate_percent : "null";
-        var amt = (t.amount != null) ? t.amount : "null";
-        pieces.push((t.type || "TAX") + " " + rp + "%:" + amt);
-      }
+      const s=json?.seller||{}, i=json?.invoice||{}, a=json?.amounts||{}, taxes=Array.isArray(json?.taxes)?json.taxes:[];
+      const breakdown = taxes.map(t => `${t.type||'TAX'} ${t.rate_percent ?? '—'}%: ${t.amount ?? '—'}`).join("; ");
       return {
-        SELLER_NAME: seller.company_name || null,
-        SELLER_GSTIN: seller.gstin || null,
-        SELLER_ADDRESS: seller.address || null,
-        INVOICE_NUMBER: invoice.number || null,
-        INVOICE_DATE: invoice.date || null,
-        TRANSACTION_ID: invoice.transaction_id || null,
-        TAXABLE_AMOUNT: (amounts.taxable_amount != null) ? amounts.taxable_amount : null,
-        TOTAL_AMOUNT: (amounts.total_amount != null) ? amounts.total_amount : null,
-        TAX_BREAKDOWN: pieces.length ? pieces.join("; ") : null,
-        SOURCE_FILE: source || null
+        SELLER_NAME: s.company_name || "",
+        SELLER_GSTIN: s.gstin || "",
+        SELLER_ADDRESS: s.address || "",
+        INVOICE_NUMBER: i.number || "",
+        INVOICE_DATE: i.date || "",
+        TRANSACTION_ID: i.transaction_id || "",
+        TAXABLE_AMOUNT: a.taxable_amount ?? "",
+        TOTAL_AMOUNT: a.total_amount ?? "",
+        TAX_BREAKDOWN: breakdown || "",
+        SOURCE_FILE: source || ""
       };
     }
-
-    // --- Ensure XLSX is loaded (wait up to 5s) ---
-    function ensureXLSX(timeoutMs){
-      return new Promise((resolve, reject) => {
-        const max = timeoutMs || 5000;
-        const start = Date.now();
-        (function check(){
-          if (typeof XLSX !== "undefined") return resolve();
-          if (Date.now() - start > max) return reject(new Error("SheetJS (XLSX) failed to load. Check network/CDN."));
-          setTimeout(check, 150);
-        })();
-      });
+    function renderTable(){
+      tbody.innerHTML = "";
+      for(const r of rows){
+        const tr=document.createElement('tr');
+        Object.values(r).forEach(v=>{
+          const td=document.createElement('td'); td.textContent = v==null?"":v; tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      }
+      tableWrap.classList.toggle('hidden', rows.length===0);
+    }
+    function downloadXlsxOrCsv(){
+      try{
+        if(typeof XLSX === "undefined") throw new Error("XLSX unavailable");
+        const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Invoices"); XLSX.writeFile(wb, "invoices.xlsx");
+      }catch(e){
+        logDbg("XLSX unavailable, falling back to CSV: "+e.message);
+        const headers = Object.keys(rows[0]||{});
+        const csv = [headers.join(",")]
+          .concat(rows.map(r=>headers.map(h=>`"${String(r[h]??"").replace(/"/g,'""')}"`).join(",")))
+          .join("\\n");
+        const blob = new Blob([csv], {type:"text/csv"});
+        const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download="invoices.csv"; a.click();
+      }
     }
 
-    function downloadExcel(rows, filename){
-      var ws = XLSX.utils.json_to_sheet(rows);
-      var wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Invoices");
-      XLSX.writeFile(wb, filename || "invoices_gpt.xlsx");
-    }
+    /* -------------- actions --------------- */
+    resetBtn.addEventListener('click', ()=>{
+      rows.length=0; renderTable(); setRowCount();
+      activityBox.innerHTML=''; addItem('warn','Session reset. You can upload new files.');
+    });
 
-    // CSV fallback if XLSX never loads
-    function downloadCsv(rows, filename){
-      if (!rows.length) return;
-      var headers = Object.keys(rows[0]);
-      var csv = [headers.join(",")]
-        .concat(rows.map(r => headers.map(h => JSON.stringify(r[h] ?? "")).join(",")))
-        .join("\n");
-      var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-      var a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = filename || "invoices.csv";
-      a.click();
-    }
+    reviewBtn.addEventListener('click', ()=>{
+      if(rows.length===0) return;
+      tableWrap.classList.remove('hidden');
+      addItem('ok','Preview shown below. Review before download.');
+    });
 
-    // ========= main click =========
-    runBtn.addEventListener("click", async function(){
+    downloadBtn.addEventListener('click', ()=>{
+      if(rows.length===0) return;
+      downloadXlsxOrCsv();
+    });
+
+    runBtn.addEventListener('click', async ()=>{
       try{
         runBtn.disabled = true;
-        logEl.textContent = ""; logEl.hidden = true;
-        setStatus("Processing...");
-        var files = Array.prototype.slice.call(fileInput.files || []);
-        if (!files.length) throw new Error("Select at least one file");
+        const files = Array.from(fileInput.files||[]);
+        if(!files.length){ addItem('warn',"Please choose at least one file."); return; }
 
-        var rows = [];
-        for (var k=0;k<files.length;k++){
-          var f = files[k];
-          setStatus("Processing " + f.name + "...");
-          log("-> " + f.name);
+        for(const f of files){
+          addItem('warn', `Processing “${f.name}” …`);
+          let payload = { imagesDataUrls:[], docText:"" };
 
-          var payload = { imagesDataUrls: [], docText: "" };
-
-          if (f.type === "application/pdf"){
-            payload.imagesDataUrls = await pdfToImages(f);
-            log("   PDF pages -> " + payload.imagesDataUrls.length + " image(s)");
-          } else if (f.type && f.type.indexOf("image/") === 0){
-            payload.imagesDataUrls = [ await imageToCompressedDataUrl(f) ];
-            log("   Image compressed");
-          } else if (f.name && f.name.toLowerCase().endsWith(".docx")){
+          if(f.type === "application/pdf"){
+            const imgs = await pdfToImages(f);
+            addItem('ok', `PDF pages → ${imgs.length} image(s)`);
+            payload.imagesDataUrls = imgs;
+          } else if(f.type && f.type.startsWith("image/")){
+            payload.imagesDataUrls = [await imageToDataUrl(f)];
+            addItem('ok', `Image compressed`);
+          } else if(f.name.toLowerCase().endsWith(".docx")){
             payload.docText = await docxToText(f);
-            log("   DOCX text extracted");
+            addItem('ok', `DOCX text extracted`);
           } else {
-            log("   Skipped unsupported file: " + f.name);
+            addItem('err', `Skipped unsupported file: ${f.name}`);
             continue;
           }
 
-          var json = await postToWorker(payload);
-          rows.push(rowFromJson(json, f.name));
-          log("   ✓ extracted");
+          const json = await postToWorker(payload);
+          const row  = rowFromJson(json, f.name);
+          rows.push(row);
+          renderTable(); setRowCount();
+          addItem('ok', '✓ Extracted');
         }
 
-        if (rows.length){
-          try {
-            await ensureXLSX();            // wait for SheetJS
-            downloadExcel(rows);
-            setStatus("Done. Excel downloaded.");
-          } catch (e) {
-            console.warn(e.message);
-            setStatus("Excel library unavailable. Falling back to CSV.");
-            downloadCsv(rows, "invoices.csv");
-          }
-        } else {
-          setStatus("No supported files processed.");
+        if(rows.length){
+          reviewBtn.classList.remove('hidden');
+          downloadBtn.classList.remove('hidden');
+          addItem('ok','Your Excel data is ready. Click “Review Excel” or “Download Excel”.');
         }
-      } catch(e){
-        console.error(e);
-        setStatus("Error: " + e.message);
-        log("Error: " + e.message);
-      } finally {
+      }catch(e){
+        addItem('err', e.message);
+        logDbg(e.stack||e.message);
+      }finally{
         runBtn.disabled = false;
       }
     });
