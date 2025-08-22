@@ -17,8 +17,8 @@
   <!-- Mammoth (DOCX -> text) -->
   <script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
 
-  <!-- SheetJS (Excel) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.19.3/xlsx.full.min.js"></script>
+  <!-- SheetJS (Excel)  ✅ UPDATED: switched to jsdelivr + v0.20.3 -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.3/dist/xlsx.full.min.js"></script>
 
   <style>
     :root { --pad:14px; --bg:#0b1020; --fg:#e9eef6; --muted:#96a3b8; --accent:#5cc8ff; }
@@ -217,6 +217,10 @@
         }
 
         if (rows.length){
+          // ✅ NEW: guard to ensure SheetJS is available before calling
+          if (typeof XLSX === "undefined") {
+            throw new Error("SheetJS (XLSX) failed to load. Check network/CDN.");
+          }
           downloadExcel(rows);
           setStatus("Done. Excel downloaded.");
         } else {
