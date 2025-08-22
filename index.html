@@ -17,8 +17,28 @@
   <!-- Mammoth (DOCX -> text) -->
   <script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
 
-  <!-- SheetJS (Excel)  ✅ UPDATED: switched to jsdelivr + v0.20.3 -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.3/dist/xlsx.full.min.js"></script>
+  <!-- SheetJS (Excel) LOADER — tries multiple CDNs and sets window.XLSX when ready -->
+  <script>
+    (function loadSheetJS() {
+      const sources = [
+        "https://cdn.jsdelivr.net/npm/xlsx@0.20.3/dist/xlsx.full.min.js",
+        "https://unpkg.com/xlsx@0.20.3/dist/xlsx.full.min.js",
+        "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.20.3/xlsx.full.min.js"
+      ];
+      let i = 0;
+      function tryNext() {
+        if (typeof window.XLSX !== "undefined") return; // already loaded
+        if (i >= sources.length) return;               // give up (we’ll CSV fallback)
+        const s = document.createElement("script");
+        s.src = sources[i++];
+        s.async = true;
+        s.onload = () => { /* XLSX now available */ };
+        s.onerror = () => { console.warn("Failed to load:", s.src); tryNext(); };
+        document.head.appendChild(s);
+      }
+      tryNext();
+    })();
+  </script>
 
   <style>
     :root { --pad:14px; --bg:#0b1020; --fg:#e9eef6; --muted:#96a3b8; --accent:#5cc8ff; }
@@ -173,11 +193,38 @@
       };
     }
 
+    // --- Ensure XLSX is loaded (wait up to 5s) ---
+    function ensureXLSX(timeoutMs){
+      return new Promise((resolve, reject) => {
+        const max = timeoutMs || 5000;
+        const start = Date.now();
+        (function check(){
+          if (typeof XLSX !== "undefined") return resolve();
+          if (Date.now() - start > max) return reject(new Error("SheetJS (XLSX) failed to load. Check network/CDN."));
+          setTimeout(check, 150);
+        })();
+      });
+    }
+
     function downloadExcel(rows, filename){
       var ws = XLSX.utils.json_to_sheet(rows);
       var wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Invoices");
       XLSX.writeFile(wb, filename || "invoices_gpt.xlsx");
+    }
+
+    // CSV fallback if XLSX never loads
+    function downloadCsv(rows, filename){
+      if (!rows.length) return;
+      var headers = Object.keys(rows[0]);
+      var csv = [headers.join(",")]
+        .concat(rows.map(r => headers.map(h => JSON.stringify(r[h] ?? "")).join(",")))
+        .join("\n");
+      var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename || "invoices.csv";
+      a.click();
     }
 
     // ========= main click =========
@@ -217,12 +264,15 @@
         }
 
         if (rows.length){
-          // ✅ NEW: guard to ensure SheetJS is available before calling
-          if (typeof XLSX === "undefined") {
-            throw new Error("SheetJS (XLSX) failed to load. Check network/CDN.");
+          try {
+            await ensureXLSX();            // wait for SheetJS
+            downloadExcel(rows);
+            setStatus("Done. Excel downloaded.");
+          } catch (e) {
+            console.warn(e.message);
+            setStatus("Excel library unavailable. Falling back to CSV.");
+            downloadCsv(rows, "invoices.csv");
           }
-          downloadExcel(rows);
-          setStatus("Done. Excel downloaded.");
         } else {
           setStatus("No supported files processed.");
         }
