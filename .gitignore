@@ -1,9 +1,40 @@
 # Git will ignore everything in this folder
-node_modules/
 
-# Ignore .env files
-.env
-*.env
-
-# Ignore specific files
+# Secrets
 .dev.vars
+.env
+.env.*
+user.json
+*.secret.*
+*.secrets.*
+
+# Cloudflare Wrangler local state
+.wrangler/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-lock.yaml
+
+# Builds / caches
+dist/
+build/
+.cache/
+.parcel-cache/
+.turbo/
+.vscode/
+.DS_Store
+
+# OS / editor
+Thumbs.db
+*.log
+
+# Test data
+test-data/
+samples/private/
+*.pdf
+*.jpg
+*.png
+*.docx

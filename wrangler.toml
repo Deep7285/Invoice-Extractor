@@ -7,3 +7,10 @@ compatibility_date = "2024-09-10"
 # For user/organization pages: https://<username>.github.io
 # For project pages:          https://<username>.github.io/<repo>
 ALLOWED_ORIGIN = "https://deep7285.github.io" 
+
+[[kv_namespaces]]                              # ← for production
+binding = "USERS"
+id = "28062621848241e19ad5c5c3bb42d60c"
+preview_id = "1145aa5fb32d476db5a11e6890ad9ec9"
+
+

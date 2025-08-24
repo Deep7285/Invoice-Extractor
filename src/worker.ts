@@ -1,145 +1,329 @@
-import { JSON_SCHEMA, SYSTEM_PROMPT, USER_INSTRUCTIONS } from "./schema_and_prompt";
+// src/worker.ts
+// Cloudflare Worker: Invoice extractor + auth
+// -------------------------------------------------------------
+// Endpoints:
+//   POST /api/login      -> { username, password } JSON body
+//   POST /api/logout     -> clears session cookie + KV entry
+//   POST /api/extract    -> FormData (images_dataurl[] and/or doc_text)
+//                          Requires session OR uses free-trial (3 attempts, 1 page max)
+//
+// Bindings (wrangler.toml):
+//   [vars] ALLOWED_ORIGIN="https://deep7285.github.io"
+//   [[kv_namespaces]] binding="USERS" id="..." preview_id="..."
+//   secret OPENAI_API_KEY
+//
+// Notes:
+// - Sessions are stored under KV key "session:<token>" with TTL.
+// - Users are stored under KV key "user:<username>" (created via your tools/make-user.mjs).
+// - Free-trial counts are tracked in a "trial" cookie (httpOnly for integrity).
+// -------------------------------------------------------------
 
-type Env = {
+export interface Env {
+  ALLOWED_ORIGIN: string;
   OPENAI_API_KEY: string;
-  ALLOWED_ORIGIN?: string;
-};
-
-const MODEL = "gpt-4o-mini";
-
-function cors(h: Headers, origin?: string) {
-  h.set("Access-Control-Allow-Origin", origin ?? "*");
-  h.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  h.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  h.set("Access-Control-Max-Age", "86400");
+  USERS: KVNamespace; // used for both users and sessions via prefixes
 }
 
-async function fileToDataUrlSafe(file: File): Promise<string> {
-  const mime = file.type || "image/jpeg";
-  const buf = new Uint8Array(await file.arrayBuffer());
-  const chunkSize = 0x8000;
-  let binary = "";
-  for (let i = 0; i < buf.length; i += chunkSize) {
-    const chunk = buf.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
+// -------------------------
+// 0) Small utilities
+// -------------------------
+const JSON_HEADER = { "content-type": "application/json; charset=utf-8" };
+
+function cors(env: Env) {
+  return {
+    "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN,
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
+function ok(body: any, env: Env, extraHeaders: Record<string, string> = {}) {
+  return new Response(
+    typeof body === "string" ? body : JSON.stringify(body),
+    { status: 200, headers: { ...JSON_HEADER, ...cors(env), ...extraHeaders } }
+  );
+}
+function bad(body: any, env: Env, status = 400) {
+  return new Response(
+    typeof body === "string" ? body : JSON.stringify(body),
+    { status, headers: { ...JSON_HEADER, ...cors(env) } }
+  );
+}
+function getCookie(req: Request, name: string): string | null {
+  const raw = req.headers.get("Cookie") || "";
+  const m = raw.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return m ? decodeURIComponent(m[1]) : null;
+}
+function setCookie(name: string, val: string, opts: {
+  maxAge?: number; path?: string; httpOnly?: boolean; sameSite?: "Lax" | "Strict" | "None"; secure?: boolean;
+} = {}) {
+  const parts = [`${name}=${encodeURIComponent(val)}`];
+  if (opts.maxAge != null) parts.push(`Max-Age=${opts.maxAge}`);
+  parts.push(`Path=${opts.path ?? "/"}`);
+  if (opts.httpOnly) parts.push("HttpOnly");
+  parts.push(`SameSite=${opts.sameSite ?? "Lax"}`);
+  if (opts.secure !== false) parts.push("Secure");
+  return parts.join("; ");
+}
+async function hashPasswordPBKDF2(password: string, saltB64: string, iterations: number): Promise<string> {
+  const enc = new TextEncoder();
+  const salt = Uint8Array.from(atob(saltB64), c => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey("raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({
+    name: "PBKDF2",
+    hash: "SHA-256",
+    iterations,
+    salt
+  }, key, 256);
+  const out = String.fromCharCode(...new Uint8Array(bits));
+  return btoa(out); // base64 string to compare with stored hash
+}
+function b64Random(bytes = 32): string {
+  const arr = new Uint8Array(bytes);
+  crypto.getRandomValues(arr);
+  return btoa(String.fromCharCode(...arr)).replace(/=+$/,"");
+}
+
+// -------------------------
+// 1) Session & trial helpers
+// -------------------------
+const SESSION_PREFIX = "session:";
+const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+const TRIAL_LIMIT = 3; // max free attempts if not logged in
+const TRIAL_COOKIE = "trial";
+const SESSION_COOKIE = "sess";
+
+async function getSession(env: Env, token: string | null) {
+  if (!token) return null;
+  const key = SESSION_PREFIX + token;
+  const json = await env.USERS.get(key, "json");
+  return json as null | { username: string; exp: number; roles?: string[] };
+}
+async function createSession(env: Env, username: string, roles: string[] = []) {
+  const token = b64Random(24);
+  const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
+  await env.USERS.put(SESSION_PREFIX + token, JSON.stringify({ username, exp, roles }), { expirationTtl: SESSION_TTL_SECONDS });
+  return { token, exp };
+}
+async function destroySession(env: Env, token: string | null) {
+  if (!token) return;
+  await env.USERS.delete(SESSION_PREFIX + token);
+}
+function readTrialCookie(req: Request): number {
+  const v = getCookie(req, TRIAL_COOKIE);
+  const n = parseInt(v || "0", 10);
+  return Number.isFinite(n) ? n : 0;
+}
+function trialExceeded(n: number) {
+  return n >= TRIAL_LIMIT;
+}
+
+// -------------------------
+// 2) Auth: login / logout
+// -------------------------
+async function handleLogin(req: Request, env: Env) {
+  try {
+    const body = await req.json<{ username?: string; password?: string }>();
+    const username = (body.username || "").trim();
+    const password = body.password || "";
+    if (!username || !password) return bad({ error: "username and password are required" }, env, 400);
+
+    const doc = await env.USERS.get("user:" + username, "json") as
+      | null
+      | { username: string; salt: string; hash: string; iterations: number; expires?: string; roles?: string[] };
+
+    if (!doc) return bad({ error: "invalid_credentials" }, env, 401);
+
+    // Validate not expired (if your tool sets expires)
+    if (doc.expires && new Date(doc.expires).getTime() < Date.now()) {
+      return bad({ error: "account_expired" }, env, 403);
+    }
+
+    // Verify password (PBKDF2 fields from your make-user tool)
+    const derived = await hashPasswordPBKDF2(password, doc.salt /* <-- field name */, doc.iterations /* <-- field name */);
+    if (derived !== doc.hash /* <-- field name */) {
+      return bad({ error: "invalid_credentials" }, env, 401);
+    }
+
+    // Create session
+    const session = await createSession(env, username, doc.roles ?? []);
+    const cookie = setCookie(SESSION_COOKIE, session.token, {
+      httpOnly: true, sameSite: "Lax", secure: true, maxAge: SESSION_TTL_SECONDS
+    });
+
+    // Also reset trial counter upon login
+    const clearTrial = setCookie(TRIAL_COOKIE, "0", { httpOnly: true, sameSite: "Lax", secure: true, maxAge: 0 });
+
+    return ok({ ok: true, username }, env, { "Set-Cookie": `${cookie}, ${clearTrial}` });
+  } catch (e: any) {
+    return bad({ error: e?.message || "bad_request" }, env, 400);
   }
-  const b64 = btoa(binary);
-  return `data:${mime};base64,${b64}`;
 }
 
+async function handleLogout(req: Request, env: Env) {
+  const token = getCookie(req, SESSION_COOKIE);
+  await destroySession(env, token);
+  const clear = setCookie(SESSION_COOKIE, "", { httpOnly: true, sameSite: "Lax", secure: true, maxAge: 0 });
+  return ok({ ok: true }, env, { "Set-Cookie": clear });
+}
+
+// -------------------------
+// 3) Guard for /api/extract
+// -------------------------
+type AuthResult =
+  | { kind: "session"; username: string; roles: string[] }
+  | { kind: "trial"; count: number };
+
+async function guardExtract(req: Request, env: Env): Promise<{ allowed: boolean; mode?: AuthResult; headers?: Record<string,string>; error?: Response }> {
+  const sessToken = getCookie(req, SESSION_COOKIE);
+  const sess = await getSession(env, sessToken);
+  if (sess && sess.exp > Math.floor(Date.now() / 1000)) {
+    return { allowed: true, mode: { kind: "session", username: sess.username, roles: sess.roles ?? [] } };
+  }
+
+  // Not logged in -> trial mode
+  const used = readTrialCookie(req);
+  if (trialExceeded(used)) {
+    const hint = "Trial limit reached. Please login to continue.";
+    return { allowed: false, error: bad({ error: "trial_exhausted", hint }, env, 429) };
+  }
+  // Increment trial cookie for this response
+  const newCount = used + 1;
+  const cookie = setCookie(TRIAL_COOKIE, String(newCount), { httpOnly: true, sameSite: "Lax", secure: true, maxAge: 60 * 60 * 24 * 7 });
+  return { allowed: true, mode: { kind: "trial", count: newCount }, headers: { "Set-Cookie": cookie } };
+}
+
+// -------------------------
+// 4) Multipart parsing helpers for extract
+// -------------------------
+async function parseFormData(request: Request) {
+  const ct = request.headers.get("content-type") || "";
+  if (!/multipart\/form-data/i.test(ct)) {
+    // Allow JSON as well if needed in future
+  }
+  const form = await request.formData();
+  const imgs: string[] = [];
+  for (const [key, value] of form.entries()) {
+    if (key === "images_dataurl[]" && typeof value === "string") imgs.push(value);
+  }
+  const docText = (form.get("doc_text") as string) || "";
+  return { imgs, docText };
+}
+
+// -------------------------
+// 5) GPT extraction call (Responses API)
+// -------------------------
+async function extractWithGPT(env: Env, parts: { imgs: string[]; docText: string }) {
+  // Compose content
+  const content: any[] = [];
+  // Text instructions
+  content.push({
+    type: "text",
+    text:
+`You are an invoice parser for Indian GST invoices.
+Return only this JSON fields:
+{
+  "seller": { "company_name": string, "gstin": string, "address": string },
+  "invoice": { "number": string, "date": string, "transaction_id": string },
+  "taxes": [ { "type": "CGST|SGST|IGST", "rate_percent": number, "amount": number } ],
+  "amounts": { "taxable_amount": number, "total_amount": number }
+}
+Use DD-MM-YYYY date format. If a field is missing, return an empty string.
+`
+  });
+  // Images (data URLs)
+  for (const d of parts.imgs) content.push({ type: "input_image", image_url: d });
+  // Optional DOCX raw text (if provided by client-side)
+  if (parts.docText?.trim()) content.push({ type: "text", text: "Raw extracted text:\n" + parts.docText.slice(0, 10000) });
+
+  const body = {
+    model: "gpt-4o-mini", // you can swap later if needed
+    input: [{ role: "user", content }],
+    temperature: 0,
+    text: { format: "json" } // enforce JSON
+  };
+
+  const resp = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!resp.ok) {
+    const t = await resp.text().catch(() => "");
+    throw new Error(`OpenAI error: ${resp.status} ${t}`);
+  }
+  const data = await resp.json<any>();
+  // Responses API returns structured output; `output_text` is convenient
+  const payload = data?.output_text ?? data?.output?.[0]?.content?.[0]?.text ?? "{}";
+  try {
+    return JSON.parse(payload);
+  } catch {
+    // if it is already object
+    return payload;
+  }
+}
+
+// -------------------------
+// 6) /api/extract handler
+// -------------------------
+async function handleExtract(req: Request, env: Env) {
+  const guard = await guardExtract(req, env);
+  if (!guard.allowed) return guard.error!;
+  const extraHeaders = guard.headers || {};
+
+  const { imgs, docText } = await parseFormData(req);
+
+  // Trial restriction: max 1 page (1 image) on trial
+  if (("mode" in guard) && guard.mode?.kind === "trial" && imgs.length > 1) {
+    return bad({ error: "trial_one_page_only" }, env, 403);
+  }
+
+  // Optional small safety: cap total images (e.g., 10)
+  if (imgs.length > 10) {
+    return bad({ error: "too_many_pages" }, env, 400);
+  }
+
+  // Call GPT
+  const json = await extractWithGPT(env, { imgs, docText });
+  return new Response(JSON.stringify(json), { status: 200, headers: { ...JSON_HEADER, ...cors(env), ...extraHeaders } });
+}
+
+// -------------------------
+// 7) Router
+// -------------------------
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
-    const origin = env.ALLOWED_ORIGIN || "*";
-
+    // CORS + preflight
     if (req.method === "OPTIONS") {
-      const r = new Response(null, { status: 204 });
-      cors(r.headers, origin);
-      return r;
-    }
-    if (req.method !== "POST" || new URL(req.url).pathname !== "/api/extract") {
-      const r = new Response("Use POST /api/extract", { status: 405 });
-      cors(r.headers, origin);
-      return r;
+      return new Response(null, { status: 204, headers: cors(env) });
     }
 
-    // ---- API key guard (TEMP for diagnosis) ----
-    const apiKey = (env.OPENAI_API_KEY || "").trim();
-    if (!apiKey || apiKey.length < 30) {
-      const r = new Response(
-        `OPENAI_API_KEY misconfigured on worker (length=${apiKey.length}). ` +
-        `Set with: npx wrangler secret put OPENAI_API_KEY`, { status: 500 }
-      );
-      cors(r.headers, origin);
-      return r;
+    const url = new URL(req.url);
+
+    // Simple “root” hint
+    if (url.pathname === "/") {
+      return new Response("Use POST /api/extract", { status: 405, headers: cors(env) });
     }
 
     try {
-      const form = await req.formData();
-
-      const images: Array<{ type: "image_url"; image_url: { url: string } }> = [];
-      const dataurlList = form.getAll("images_dataurl[]");
-      for (const v of dataurlList) {
-        if (typeof v === "string" && v.startsWith("data:image/")) {
-          images.push({ type: "image_url", image_url: { url: v } });
-        }
+      if (url.pathname === "/api/login" && req.method === "POST") {
+        return await handleLogin(req, env);
       }
-      const binList = form.getAll("images[]");
-      for (const v of binList) {
-        if (v instanceof File) {
-          const dataUrl = await fileToDataUrlSafe(v);
-          images.push({ type: "image_url", image_url: { url: dataUrl } });
-        }
+      if (url.pathname === "/api/logout" && req.method === "POST") {
+        return await handleLogout(req, env);
+      }
+      if (url.pathname === "/api/extract" && req.method === "POST") {
+        return await handleExtract(req, env);
       }
 
-      const docTextRaw = form.get("doc_text");
-      const docText = typeof docTextRaw === "string" && docTextRaw.trim() ? docTextRaw.trim() : null;
-
-      if (!docText && images.length === 0) {
-        const r = new Response("Provide at least doc_text or one image.", { status: 400 });
-        cors(r.headers, origin);
-        return r;
-      }
-      if (images.length > 10) {
-        const r = new Response("Max 10 pages/images allowed", { status: 400 });
-        cors(r.headers, origin);
-        return r;
-      }
-
-      const userContent: any[] = [{ type: "text", text: USER_INSTRUCTIONS }];
-      if (docText) userContent.push({ type: "text", text: docText });
-      if (images.length) userContent.push(...images);
-
-      const payload = {
-        model: MODEL,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userContent }
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: JSON_SCHEMA.name,
-            schema: JSON_SCHEMA.schema,
-            strict: true
-          }
-        },
-        temperature: 0
-      };
-
-      const oai = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json"
-          // If you are using a specific Organization or need Project header, you can add:
-          // "OpenAI-Organization": "<org_id>",
-          // "OpenAI-Project": "<project_id>",
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!oai.ok) {
-        const errText = await oai.text();
-        // view this with: npx wrangler tail
-        console.error("OpenAI error:", oai.status, errText);
-        const r = new Response(`OpenAI error: ${oai.status} ${errText}`, { status: 502 });
-        cors(r.headers, origin);
-        return r;
-      }
-
-      const body = await oai.json();
-      const content = body?.choices?.[0]?.message?.content;
-      const jsonText = typeof content === "string" ? content : JSON.stringify(content);
-
-      const r = new Response(jsonText, { status: 200, headers: { "Content-Type": "application/json" } });
-      cors(r.headers, origin);
-      return r;
-
-    } catch (e: any) {
-      console.error("Worker exception:", e?.stack || e);
-      const r = new Response(`Worker error: ${e?.message ?? e}`, { status: 500 });
-      cors(r.headers, origin);
-      return r;
+      return bad({ error: "not_found" }, env, 404);
+    } catch (err: any) {
+      // Avoid leaking stack traces
+      return bad({ error: "server_error", detail: String(err?.message || err) }, env, 500);
     }
   }
-} satisfies ExportedHandler<Env>;
+};
