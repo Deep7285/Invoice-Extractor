@@ -1,4 +1,4 @@
-<!-- Data Extractor — polished 2-section (Home + Extract), login badge, trial gating, comments for easy tweaking -->
+<!-- Front page file updated with login crendential page and upgraded UI-->
 <!doctype html>
 <html lang="en">
 <head>
@@ -6,129 +6,85 @@
   <title>Data Extractor — AI invoice OCR to Excel</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- ====== LIBS ====== -->
-  <!-- pdf.js: PDF → canvas -->
+  <!-- pdf.js -->
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
   </script>
-  <!-- Mammoth: DOCX → text -->
+  <!-- Mammoth -->
   <script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
-  <!-- SheetJS: Excel (fallbacks to CSV if CDN blocked) -->
+  <!-- SheetJS -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.19.3/xlsx.full.min.js"
           crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
   <style>
     :root{
-      /* ===== THEME KNOBS (edit freely) ===== */
-      --bg:            #2f4a83;      /* page background (blue) */
-      --panel:         #f5eeee;      /* card/panel color */
-      --ink:           #0c1b2a;      /* primary text */
-      --muted:         #5b6a7f;      /* secondary text */
-      --brand:         #1e66ff;      /* primary action */
-      --brand-weak:    #dfe9ff;      /* subtle brand bg */
-      --border:        #e8e3e3;      /* hairline border */
-
-      /* ===== TYPE SCALE ===== */
-      --fs-xxl: clamp(30px, 4.6vw, 48px);  /* hero heading */
-      --fs-xl:  clamp(20px, 2.6vw, 28px);  /* section titles */
-      --fs-lg:  clamp(16px, 2.0vw, 18px);  /* larger body */
-      --fs-md:  15px;                      /* normal text */
-      --fs-sm:  13px;                      /* small text */
-
-      /* ===== RADIUS / SHADOW / SPACING ===== */
-      --radius: 14px;
-      --shadow: 0 14px 30px rgba(0,0,0,.15);
+      --bg:#2f4a83; --panel:#f5eeee; --ink:#0c1b2a; --muted:#5b6a7f; --brand:#1e66ff;
+      --brand-weak:#dfe9ff; --border:#e8e3e3;
+      --fs-xxl:clamp(30px,4.6vw,48px); --fs-xl:clamp(20px,2.6vw,28px);
+      --fs-lg:clamp(16px,2.0vw,18px); --fs-md:15px; --fs-sm:13px;
+      --radius:14px; --shadow:0 14px 30px rgba(0,0,0,.15);
     }
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font:400 var(--fs-md)/1.5 system-ui,Arial,sans-serif}
+    a{color:var(--brand);text-decoration:none} a:hover{text-decoration:underline}
+    .container{max-width:1100px;margin:0 auto;padding:0 18px}
+    .hidden{display:none!important}
 
-    /* ========== Global ========== */
-    html, body { margin:0; padding:0; background: var(--bg); color: var(--ink); font: 400 var(--fs-md)/1.5 system-ui, Arial, sans-serif; }
-    a{ color: var(--brand); text-decoration: none; }
-    a:hover{ text-decoration: underline; }
-    .container{ max-width: 1100px; margin: 0 auto; padding: 0 18px; }
-    .hidden{ display:none !important; }
+    /* NEW: page router visibility + active tab style */
+    .page{display:none}
+    .page.active{display:block}
+    nav a.active{background:var(--brand);color:#fff}
 
-    /* ========== Sticky header ========== */
-    header{
-      background: #f6efef;
-      position: sticky; top:0; z-index: 50;
-      border-bottom: 1px solid var(--border);
-    }
-    .header-wrap{ display:flex; align-items:center; justify-content:space-between; height: 64px; gap: 18px; }
-    .brand{ display:flex; align-items:center; gap: 12px; font-weight: 800; font-size: clamp(22px, 3.2vw, 28px); }
-    .brand img{ width: 34px; height: 34px; border-radius: 8px; }
-    nav{ display:flex; align-items:center; gap: 12px; }
-    nav a{ font-weight: 600; padding: 8px 14px; border-radius: 999px; }
-    .btn-outline{ border:1px solid var(--border); background:#fff; }
-    .btn-outline:hover{ background:#fafafa; }
-    .btn-mini{ padding: 8px 12px; border-radius: 10px; border:1px solid var(--border); background:#fff; font-weight:700; cursor:pointer; }
+    header{background:#f6efef;position:sticky;top:0;z-index:50;border-bottom:1px solid var(--border)}
+    .header-wrap{display:flex;align-items:center;justify-content:space-between;height:64px;gap:18px}
+    .brand{display:flex;align-items:center;gap:12px;font-weight:800;font-size:clamp(22px,3.2vw,28px)}
+    .brand img{width:34px;height:34px;border-radius:8px}
+    nav{display:flex;align-items:center;gap:12px}
+    nav a{font-weight:600;padding:8px 14px;border-radius:999px;border:1px solid var(--border);background:#fff}
+    .btn-mini{padding:8px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;font-weight:700;cursor:pointer}
+    .badge{padding:4px 10px;border-radius:999px;font-size:13px;font-weight:700;background:var(--brand-weak);color:var(--ink);border:1px solid #c9d8ff}
 
-    /* Small pill badge = login state */
-    .badge { padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; background: var(--brand-weak); color: var(--ink); border: 1px solid #c9d8ff; }
+    .hero{padding:52px 0 72px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,0))}
+    .grid{display:grid;grid-template-columns:1.1fr .9fr;gap:28px}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:28px}
+    .h1{font-size:var(--fs-xxl);line-height:1.2;margin:0 0 18px}
+    .body-lg{font-size:var(--fs-lg);color:var(--muted)}
+    .actions{display:flex;gap:16px;margin-top:22px}
+    .btn{display:inline-flex;align-items:center;gap:8px;background:var(--brand);color:#fff;border:0;cursor:pointer;padding:12px 18px;border-radius:12px;font-weight:700;box-shadow:0 6px 14px rgba(30,102,255,.2)}
+    .btn-ghost{background:#fff;color:var(--ink);border:1px solid var(--border)}
+    .hint{font-size:var(--fs-sm);color:var(--muted);margin-top:8px}
+    .illustration{background:#fff;border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--border);height:360px;display:flex;align-items:center;justify-content:center}
+    .illustration img{width:100%;height:100%;object-fit:cover}
 
-    /* ========== Home (hero) ========== */
-    .hero{ padding: 52px 0 72px; }
-    .grid{ display:grid; grid-template-columns: 1.1fr 0.9fr; gap: 28px; }
-    .card{ background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 28px; }
-    .h1{ font-size: var(--fs-xxl); line-height: 1.2; margin: 0 0 18px; }
-    .body-lg{ font-size: var(--fs-lg); color: var(--muted); }
-    .actions{ display:flex; gap: 16px; margin-top: 22px; }
-    .btn{ display:inline-flex; align-items:center; gap:8px; background: var(--brand); color: #fff; border: 0; cursor: pointer; padding: 12px 18px; border-radius: 12px; font-weight: 700; box-shadow: 0 6px 14px rgba(30,102,255,.2); transition: transform .05s ease, box-shadow .2s ease; }
-    .btn:active{ transform: translateY(1px); box-shadow: 0 2px 6px rgba(0,0,0,.12); }
-    .btn-ghost{ background: #fff; color: var(--ink); border:1px solid var(--border); }
-    .hint{ font-size: var(--fs-sm); color: var(--muted); margin-top: 8px; }
-    .illustration{ background:#fff; border-radius: var(--radius); overflow:hidden; box-shadow: var(--shadow); border:1px solid var(--border); height: 360px; display:flex; align-items:center; justify-content:center; }
-    .illustration img{ width:100%; height:100%; object-fit: cover; }
+    .section{padding:38px 0 70px}
+    .panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px}
+    .h2{font-size:var(--fs-xl);margin:0 0 8px}
+    .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .actions-bar{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px}
+    .log{background:#fff;color:#0d1b2a;border-radius:10px;padding:12px;border:1px solid var(--border);margin-top:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;max-height:340px;overflow:auto}
+    .badge-small{background:var(--brand-weak);color:var(--ink);border-radius:999px;padding:4px 10px;font-size:var(--fs-sm);font-weight:700}
+    .table-wrap{overflow:auto;border:1px solid var(--border);border-radius:10px;margin-top:16px}
+    table{border-collapse:collapse;width:100%;background:#fff}
+    th,td{padding:10px 12px;border-bottom:1px solid #eaeaea;text-align:left;white-space:nowrap}
+    th{background:#f9f9fb;font-size:var(--fs-sm);letter-spacing:.02em}
 
-    /* subtle gradient band for hero */
-    main.hero{ background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,0)); }
+    footer{background:#f6efef;border-top:1px solid var(--border)}
+    .footer-wrap{display:flex;align-items:center;justify-content:space-between;padding:14px 0;flex-wrap:wrap;gap:12px}
+    .contact{display:flex;align-items:center;gap:10px;color:var(--muted)}
+    .contact b{color:var(--ink)}
+    .contact a{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;background:#fff;border:1px solid var(--border)}
+    .contact img{width:18px;height:18px}
 
-    /* ========== Extract section ========== */
-    .section{ padding: 38px 0 70px; }
-    .panel{ background: var(--panel); border:1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding:22px; }
-    .h2{ font-size: var(--fs-xl); margin: 0 0 8px; }
-    .row{ display:flex; gap: 12px; align-items:center; flex-wrap: wrap; }
-    .actions-bar{ display:flex; flex-wrap:wrap; gap: 14px; margin-top: 10px; }
-
-    .log{ background:#fff; color:#0d1b2a; border-radius:10px; padding:12px; border:1px solid var(--border); margin-top:14px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; max-height: 340px; overflow:auto; }
-    .badge-small{ background: var(--brand-weak); color: var(--ink); border-radius: 999px; padding:4px 10px; font-size: var(--fs-sm); font-weight:700; }
-
-    .table-wrap{ overflow:auto; border:1px solid var(--border); border-radius: 10px; margin-top: 16px; }
-    table{ border-collapse: collapse; width:100%; background:#fff; }
-    th, td{ padding:10px 12px; border-bottom:1px solid #eaeaea; text-align:left; white-space: nowrap; }
-    th{ background:#f9f9fb; font-size: var(--fs-sm); letter-spacing: .02em; }
-    td{ font-size: var(--fs-md); }
-
-    /* ========== Footer (contact) ========== */
-    footer{ background:#f6efef; border-top:1px solid var(--border); }
-    .footer-wrap{ display:flex; align-items:center; justify-content:space-between; padding: 14px 0; flex-wrap:wrap; gap:12px; }
-    .contact{ display:flex; align-items:center; gap: 10px; color: var(--muted); }
-    .contact b{ color: var(--ink); }
-    .contact a{ display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius: 8px; background:#fff; border:1px solid var(--border); }
-    .contact img{ width:18px; height:18px; }
-
-    /* ========== Modal ========== */
-    .modal{ position:fixed; inset:0; background: rgba(0,0,0,.4); display:none; align-items:center; justify-content:center; z-index: 1000; }
-    .modal.show{ display:flex; }
-    .modal-card{ width:min(480px, 92vw); background:#fff; border-radius:16px; padding:22px; box-shadow: var(--shadow); border:1px solid var(--border); }
-    .field{ display:flex; flex-direction:column; gap:6px; margin-top:12px; }
-    .field input{ border:1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: var(--fs-md); outline: none; }
-    .field input:focus{ border-color: var(--brand); box-shadow: 0 0 0 3px rgba(30,102,255,.12); }
-    .modal-actions{ display:flex; gap:10px; justify-content:flex-end; margin-top: 14px; }
-    .note{ color: var(--muted); font-size: var(--fs-sm); margin-top: 6px; }
-
-    /* ========== Mobile ========== */
-    @media (max-width: 920px){
-      .grid{ grid-template-columns: 1fr; }
-      .illustration{ height: 220px; }
-      nav{ gap: 8px; }
+    @media (max-width:920px){
+      .grid{grid-template-columns:1fr}
+      .illustration{height:220px}
+      nav{gap:8px}
     }
   </style>
 </head>
 <body>
-
-  <!-- ===== Header (sticky) ===== -->
+  <!-- Header -->
   <header>
     <div class="container header-wrap">
       <div class="brand">
@@ -136,21 +92,17 @@
         <span>Data Extractor</span>
       </div>
       <nav>
-        <a class="btn-outline" href="#home">Home</a>
-        <a class="btn-outline" href="#extract">Invoice data extraction</a>
-
-        <!-- shows “Logged in as <user>” when authenticated -->
+        <a href="#home">Home</a>
+        <a href="#extract">Invoice data extraction</a>
         <span id="loginBadge" class="badge hidden"></span>
-
-        <!-- auth buttons -->
         <button class="btn-mini" id="openLoginBtn">Login</button>
         <button class="btn-mini hidden" id="logoutBtn">Logout</button>
       </nav>
     </div>
   </header>
 
-  <!-- ===== HOME ===== -->
-  <main id="home" class="hero">
+  <!-- HOME (page) -->
+  <main id="home" class="hero page">
     <div class="container">
       <div class="grid">
         <section class="card">
@@ -166,8 +118,6 @@
           </div>
           <p class="hint">Tip: Nothing is stored server-side; files are processed in memory and discarded after extraction.</p>
         </section>
-
-        <!-- Right: hero image (local with graceful fallback) -->
         <aside class="illustration">
           <img src="assets/hero.png"
                onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1555421689-43cad7100751?q=80&w=1470&auto=format&fit=crop';"
@@ -177,8 +127,8 @@
     </div>
   </main>
 
-  <!-- ===== EXTRACTOR ===== -->
-  <section id="extract" class="section">
+  <!-- EXTRACTOR (page) -->
+  <section id="extract" class="section page">
     <div class="container">
       <div class="panel">
         <h2 class="h2">Invoice Extractor</h2>
@@ -193,7 +143,6 @@
           <span id="rowsBadge" class="badge-small" hidden>0 rows</span>
         </div>
 
-        <!-- unified button style & spacing -->
         <div class="actions-bar">
           <button id="reviewBtn" class="btn-ghost">Review Excel</button>
           <button id="downloadBtn" class="btn-ghost">Download Excel</button>
@@ -202,7 +151,6 @@
 
         <div id="status" class="hint" style="margin-top:8px;"></div>
         <pre id="log" class="log" hidden></pre>
-
         <div id="tableWrap" class="table-wrap" hidden>
           <table id="previewTable"></table>
         </div>
@@ -210,230 +158,202 @@
     </div>
   </section>
 
-  <!-- ===== Footer (contact) ===== -->
+  <!-- Footer -->
   <footer id="contact">
     <div class="container footer-wrap">
       <div class="hint">© 2025 Data Extractor</div>
       <div class="contact">
         <b>Contact Us @</b>
-        <a href="mailto:deepak72855@gmail.com" title="Email">
-          <img src="assets/gmail.png" alt="Gmail icon" /> deepak72855@gmail.com
-        </a>
-        <a href="https://www.linkedin.com/in/deepak8439/" target="_blank" rel="noopener" title="LinkedIn">
-          <img src="assets/linkedin.png" alt="LinkedIn icon" /> LinkedIn
+        <a href="mailto:deepak72855@gmail.com"><img src="assets/gmail.png" alt=""> deepak72855@gmail.com</a>
+        <a href="https://www.linkedin.com/in/deepak8439/" target="_blank" rel="noopener">
+          <img src="assets/linkedin.png" alt=""> LinkedIn
         </a>
       </div>
     </div>
   </footer>
 
-  <!-- ===== Login modal ===== -->
-  <div id="loginModal" class="modal" aria-hidden="true">
-    <div class="modal-card">
-      <h3 class="h2" style="margin:0;">Login</h3>
-      <p class="body-lg" style="margin:6px 0;">Please contact us for full service and support.</p>
-      <div class="field">
-        <label for="username">Username</label>
-        <input id="username" type="text" placeholder="your@email.com or username" />
-      </div>
-      <div class="field">
-        <label for="password">Password</label>
-        <input id="password" type="password" placeholder="••••••••" />
-      </div>
-      <div class="note" id="loginMsg"></div>
-      <div class="modal-actions">
-        <button class="btn-ghost" id="closeLoginBtn">Cancel</button>
-        <button class="btn" id="doLoginBtn">Login</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===== App script ===== -->
+  <!-- ===== APP SCRIPT ===== -->
   <script>
-    /******************* CONFIG (safe to edit) *******************/
-    const WORKER_ENDPOINT = "https://invoice-worker.deepak72855.workers.dev"; // <- your Worker
-    const TRIAL_MAX_ATTEMPTS = 3;   // free runs before login
-    const TRIAL_MAX_PAGES    = 1;   // per-PDF page cap in trial
-    const MAX_PAGES_PER_PDF  = 10;  // hard cap
-    const JPEG_QUALITY       = 0.7;
-    const TARGET_WIDTH       = 1300;
+    /* ---------- Simple router: show only one page (#home or #extract) ---------- */
+    function showPage(hash){
+      if(hash !== '#extract') hash = '#home';
+      document.querySelectorAll('.page')
+        .forEach(el => el.classList.toggle('active', '#'+el.id === hash));
+      document.querySelectorAll('nav a')
+        .forEach(a => a.classList.toggle('active', a.getAttribute('href') === hash));
+      window.scrollTo(0,0);
+    }
+    window.addEventListener('hashchange', ()=>showPage(location.hash));
+    document.addEventListener('DOMContentLoaded', ()=>showPage(location.hash || '#home'));
 
-    // localStorage keys
-    const LS_TRIAL_COUNT = "de_trial_count_v1";
-    const LS_LOGGED_IN   = "de_logged_in_v1";
-    const LS_USERNAME    = "de_username_v1";
+    /* ---------- App config (same as before) ---------- */
+    const WORKER_ENDPOINT = "https://invoice-worker.deepak72855.workers.dev";
+    const TRIAL_MAX_ATTEMPTS = 3, TRIAL_MAX_PAGES = 1, MAX_PAGES_PER_PDF = 10;
+    const JPEG_QUALITY = 0.7, TARGET_WIDTH = 1300;
+    const LS_TRIAL_COUNT="de_trial_count_v1", LS_LOGGED_IN="de_logged_in_v1", LS_USERNAME="de_username_v1";
 
-    /******************* DOM helpers *******************/
     const $ = s => document.querySelector(s);
     const statusEl = $('#status'), logEl = $('#log'), rowsBadge = $('#rowsBadge');
     const tableWrap = $('#tableWrap'), table = $('#previewTable'), trialInfo = $('#trialInfo');
     const loginBadgeEl = $('#loginBadge'), loginBtn = $('#openLoginBtn'), logoutBtn = $('#logoutBtn');
 
-    const setStatus = (m)=> statusEl.textContent = m;
-    const addLog = (m)=> { logEl.hidden = false; logEl.textContent += m + "\n"; };
+    const setStatus = m => statusEl.textContent = m;
+    const addLog = m => { logEl.hidden=false; logEl.textContent += m + "\n"; };
 
-    /******************* Trial + login state *******************/
-    const getTrialCount = ()=> Number(localStorage.getItem(LS_TRIAL_COUNT) || 0);
-    const bumpTrial     = ()=> localStorage.setItem(LS_TRIAL_COUNT, String(getTrialCount() + 1));
-    const isLoggedIn    = ()=> localStorage.getItem(LS_LOGGED_IN) === "1";
-    const setLoggedIn   = (v)=> localStorage.setItem(LS_LOGGED_IN, v ? "1" : "0");
-    const getUsername   = ()=> localStorage.getItem(LS_USERNAME) || "";
-    const setUsername   = (u)=> u ? localStorage.setItem(LS_USERNAME, u) : localStorage.removeItem(LS_USERNAME);
-
-    function updateLoginBadge(username){
-      if(username){ loginBadgeEl.textContent = `Logged in as ${username}`; loginBadgeEl.classList.remove('hidden'); }
-      else{ loginBadgeEl.textContent = ""; loginBadgeEl.classList.add('hidden'); }
-    }
+    const getTrialCount = () => Number(localStorage.getItem(LS_TRIAL_COUNT) || 0);
+    const bumpTrial     = () => localStorage.setItem(LS_TRIAL_COUNT, String(getTrialCount()+1));
+    const isLoggedIn    = () => localStorage.getItem(LS_LOGGED_IN) === "1";
+    const setLoggedIn   = v => localStorage.setItem(LS_LOGGED_IN, v ? "1" : "0");
+    const getUsername   = () => localStorage.getItem(LS_USERNAME) || "";
+    const setUsername   = u => u ? localStorage.setItem(LS_USERNAME,u) : localStorage.removeItem(LS_USERNAME);
+    function updateLoginBadge(u){ if(u){loginBadgeEl.textContent=`Logged in as ${u}`;loginBadgeEl.classList.remove('hidden');} else {loginBadgeEl.textContent="";loginBadgeEl.classList.add('hidden');}}
     function refreshTrialBanner(){
-      if(isLoggedIn()){
-        trialInfo.textContent = "Logged-in (no trial limits)";
-        loginBtn.classList.add('hidden'); logoutBtn.classList.remove('hidden');
-      }else{
-        trialInfo.textContent = `${TRIAL_MAX_ATTEMPTS - getTrialCount()} attempt(s) left • 1 page max per PDF`;
-        loginBtn.classList.remove('hidden'); logoutBtn.classList.add('hidden');
-      }
-      updateLoginBadge(isLoggedIn() ? getUsername() : "");
+      if(isLoggedIn()){ trialInfo.textContent="Logged-in (no trial limits)"; loginBtn.classList.add('hidden'); logoutBtn.classList.remove('hidden'); }
+      else{ trialInfo.textContent=`${TRIAL_MAX_ATTEMPTS - getTrialCount()} attempt(s) left • 1 page max per PDF`; loginBtn.classList.remove('hidden'); logoutBtn.classList.add('hidden'); }
+      updateLoginBadge(isLoggedIn()?getUsername():"");
     }
 
-    /******************* Login modal + API calls *******************/
-    $('#closeLoginBtn').addEventListener('click', ()=> $('#loginModal').classList.remove('show'));
-    loginBtn.addEventListener('click', ()=> $('#loginModal').classList.add('show'));
-
-    $('#doLoginBtn').addEventListener('click', async ()=>{
-      const u = $('#username').value.trim(), p = $('#password').value;
-      const msg = $('#loginMsg'); msg.textContent = "";
+    $('#openLoginBtn').addEventListener('click', ()=>document.getElementById('loginModal').classList.add('show'));
+    document.getElementById('closeLoginBtn')?.addEventListener('click', ()=>document.getElementById('loginModal').classList.remove('show'));
+    document.getElementById('doLoginBtn')?.addEventListener('click', async ()=>{
+      const u = document.getElementById('username').value.trim();
+      const p = document.getElementById('password').value;
+      const msg = document.getElementById('loginMsg'); msg.textContent="";
       try{
-        if(!u || !p) throw new Error("Enter username and password.");
-        const resp = await fetch(`${WORKER_ENDPOINT}/api/login`, {
-          method:"POST", credentials:"include",
-          headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify({ username:u, password:p })
+        if(!u||!p) throw new Error("Enter username and password.");
+        const resp = await fetch(`${WORKER_ENDPOINT}/api/login`,{
+          method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({username:u,password:p})
         });
-        if(!resp.ok) throw new Error(await resp.text() || "Login failed");
+        if(!resp.ok) throw new Error(await resp.text()||"Login failed");
         const data = await resp.json();
-        setLoggedIn(true); setUsername(data.username || u);
-        $('#loginModal').classList.remove('show');
-        setStatus("Logged in. Trial limits lifted for this browser.");
-        refreshTrialBanner();
-      }catch(e){ msg.textContent = e.message; msg.style.color = "#ef4444"; }
+        setLoggedIn(true); setUsername(data.username||u);
+        document.getElementById('loginModal').classList.remove('show');
+        setStatus("Logged in. Trial limits lifted for this browser."); refreshTrialBanner();
+      }catch(e){ msg.textContent=e.message; msg.style.color="#ef4444"; }
     });
-
     logoutBtn.addEventListener('click', async ()=>{
-      try{ await fetch(`${WORKER_ENDPOINT}/api/logout`, { method:"POST", credentials:"include" }); }catch{}
+      try{ await fetch(`${WORKER_ENDPOINT}/api/logout`,{method:"POST",credentials:"include"}); }catch{}
       setLoggedIn(false); setUsername(""); setStatus("Logged out."); refreshTrialBanner();
     });
 
-    /******************* File helpers (PDF/IMG/DOCX) *******************/
-    function fileToDataUrl(file){
-      return new Promise(res => { const r = new FileReader(); r.onload = e => res(e.target.result); r.readAsDataURL(file); });
-    }
+    function fileToDataUrl(file){ return new Promise(res=>{const r=new FileReader(); r.onload=e=>res(e.target.result); r.readAsDataURL(file);}); }
     async function pdfToImages(file){
       const dataUrl = await fileToDataUrl(file);
       const pdf = await pdfjsLib.getDocument({ url:dataUrl }).promise;
-      if(!isLoggedIn() && pdf.numPages > 1) throw new Error(`Trial mode allows only ${TRIAL_MAX_PAGES} page per PDF.`);
-      const pages = Math.min(pdf.numPages, MAX_PAGES_PER_PDF);
-      const out = [];
-      for (let p=1; p<=pages; p++){
+      if(!isLoggedIn() && pdf.numPages > 1) throw new Error(`Trial allows only ${TRIAL_MAX_PAGES} page per PDF.`);
+      const pages = Math.min(pdf.numPages, MAX_PAGES_PER_PDF), out=[];
+      for(let p=1;p<=pages;p++){
         const page = await pdf.getPage(p);
-        const scale = TARGET_WIDTH / page.getViewport({ scale:1 }).width;
-        const vp = page.getViewport({ scale });
+        const scale = TARGET_WIDTH / page.getViewport({scale:1}).width;
+        const vp = page.getViewport({scale});
         const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
-        canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
-        await page.render({ canvasContext:ctx, viewport:vp }).promise;
-        out.push(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
+        canvas.width=Math.floor(vp.width); canvas.height=Math.floor(vp.height);
+        await page.render({canvasContext:ctx,viewport:vp}).promise;
+        out.push(canvas.toDataURL('image/jpeg',0.7));
       }
       return out;
     }
     async function imageToCompressedDataUrl(file){
       const dataUrl = await fileToDataUrl(file);
-      const img = new Image(); await new Promise(res => { img.onload = res; img.src = dataUrl; });
-      const scale = img.width > TARGET_WIDTH ? TARGET_WIDTH / img.width : 1;
-      const canvas = document.createElement('canvas'); canvas.width = Math.floor(img.width*scale); canvas.height = Math.floor(img.height*scale);
-      const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      return canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+      const img = new Image(); await new Promise(res=>{img.onload=res; img.src=dataUrl;});
+      const scale = img.width > TARGET_WIDTH ? TARGET_WIDTH/img.width : 1;
+      const canvas=document.createElement('canvas'); canvas.width=Math.floor(img.width*scale); canvas.height=Math.floor(img.height*scale);
+      canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+      return canvas.toDataURL('image/jpeg',0.7);
     }
-    async function docxToText(file){
-      const arrayBuffer = await file.arrayBuffer();
-      const result = await window.mammoth.extractRawText({ arrayBuffer });
-      return result.value || "";
-    }
+    async function docxToText(file){ const ab=await file.arrayBuffer(); const r=await window.mammoth.extractRawText({arrayBuffer:ab}); return r.value||""; }
 
-    /******************* Worker call (cookies on) *******************/
     async function postToWorker(payload){
       const form = new FormData();
-      if(payload.images?.length) payload.images.forEach(u => form.append('images_dataurl[]', u));
-      if(payload.docText) form.append('doc_text', payload.docText);
-      const resp = await fetch(`${WORKER_ENDPOINT}/api/extract`, { method:'POST', body: form, credentials: "include" });
-      if(!resp.ok) throw new Error(`Worker ${resp.status}: ${(await resp.text().catch(()=> "")) || "request failed"}`);
+      payload.images?.forEach(u=>form.append('images_dataurl[]',u));
+      if(payload.docText) form.append('doc_text',payload.docText);
+      const resp = await fetch(`${WORKER_ENDPOINT}/api/extract`,{method:'POST',body:form,credentials:"include"});
+      if(!resp.ok) throw new Error(`Worker ${resp.status}: ${(await resp.text().catch(()=>'')) || 'request failed'}`);
       return resp.json();
     }
 
-    /******************* Table + Excel *******************/
-    const rows = [];
-    function rowFromJson(json, src){
+    const rows=[]; function rowFromJson(json,src){
       const s=json?.seller||{}, i=json?.invoice||{}, a=json?.amounts||{}, taxes=Array.isArray(json?.taxes)?json.taxes:[];
-      const breakdown = taxes.map(t=>`${t.type||'TAX'} ${t.rate_percent ?? ''}%:${t.amount ?? ''}`).join('; ');
+      const breakdown = taxes.map(t=>`${t.type||'TAX'} ${t.rate_percent??''}%:${t.amount??''}`).join('; ');
       return { SELLER_NAME:s.company_name||null, SELLER_GSTIN:s.gstin||null, SELLER_ADDRESS:s.address||null,
         INVOICE_NUMBER:i.number||null, INVOICE_DATE:i.date||null, TRANSACTION_ID:i.transaction_id||null,
-        TAXABLE_AMOUNT:a.taxable_amount ?? null, TOTAL_AMOUNT:a.total_amount ?? null,
-        TAX_BREAKDOWN:breakdown || null, SOURCE_FILE:src || null };
+        TAXABLE_AMOUNT:a.taxable_amount??null, TOTAL_AMOUNT:a.total_amount??null, TAX_BREAKDOWN:breakdown||null, SOURCE_FILE:src||null };
     }
     function renderTable(){
-      if(!rows.length){ tableWrap.hidden = true; return; }
-      const cols = Object.keys(rows[0]);
-      table.innerHTML = `<thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>` +
-                        `<tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${r[c]??''}</td>`).join('')}</tr>`).join('')}</tbody>`;
-      tableWrap.hidden = false; rowsBadge.hidden = false; rowsBadge.textContent = `${rows.length} row(s)`;
+      if(!rows.length){ document.getElementById('tableWrap').hidden=true; return; }
+      const cols=Object.keys(rows[0]);
+      document.getElementById('previewTable').innerHTML =
+        `<thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>` +
+        `<tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${r[c]??''}</td>`).join('')}</tr>`).join('')}</tbody>`;
+      document.getElementById('tableWrap').hidden=false;
+      document.getElementById('rowsBadge').hidden=false;
+      document.getElementById('rowsBadge').textContent = `${rows.length} row(s)`;
     }
     function downloadExcel(){
       if(!rows.length) return setStatus("Nothing to download yet.");
-      try{
-        const ws = XLSX.utils.json_to_sheet(rows), wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Invoices"); XLSX.writeFile(wb, "invoices_gpt.xlsx");
-      }catch(e){
-        // Fallback CSV
-        const csv = [Object.keys(rows[0]).join(','), ...rows.map(r=>Object.values(r).map(v=>`"${(v??'').toString().replaceAll('"','""')}"`).join(','))].join('\n');
-        const blob = new Blob([csv], {type:"text/csv;charset=utf-8"}); const a=document.createElement('a');
-        a.href = URL.createObjectURL(blob); a.download = "invoices_gpt.csv"; a.click();
-      }
+      try{ const ws=XLSX.utils.json_to_sheet(rows), wb=XLSX.utils.book_new();
+           XLSX.utils.book_append_sheet(wb,ws,"Invoices"); XLSX.writeFile(wb,"invoices_gpt.xlsx"); }
+      catch(e){ const csv=[Object.keys(rows[0]).join(','),...rows.map(r=>Object.values(r).map(v=>`"${(v??'').toString().replaceAll('"','""')}"`).join(','))].join('\n');
+                const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}); const a=document.createElement('a');
+                a.href=URL.createObjectURL(blob); a.download="invoices_gpt.csv"; a.click(); }
     }
 
-    /******************* Main extract flow *******************/
-    $('#extractBtn').addEventListener('click', async ()=>{
+    document.getElementById('extractBtn').addEventListener('click', async ()=>{
       try{
-        if(!isLoggedIn() && getTrialCount() >= TRIAL_MAX_ATTEMPTS)
-          throw new Error("Trial limit reached. Please login for full access.");
-        const files = Array.from($('#fileInput').files||[]);
-        if(!files.length) throw new Error("Please choose at least one file.");
-
-        setStatus("Processing…"); logEl.hidden = true; tableWrap.hidden = true;
-
+        if(!isLoggedIn() && getTrialCount() >= TRIAL_MAX_ATTEMPTS) throw new Error("Trial limit reached. Please login.");
+        const files=Array.from(document.getElementById('fileInput').files||[]); if(!files.length) throw new Error("Please choose at least one file.");
+        setStatus("Processing…"); document.getElementById('log').hidden=true; document.getElementById('tableWrap').hidden=true;
         for(const f of files){
           addLog(`• Processing “${f.name}” …`);
-          const payload = { images:[], docText:"" };
-          if(f.type === "application/pdf"){ payload.images = await pdfToImages(f); addLog(`  PDF pages → ${payload.images.length} image(s)`); }
-          else if(f.type.startsWith("image/")){ payload.images = [await imageToCompressedDataUrl(f)]; addLog("  Image compressed"); }
-          else if(f.name.toLowerCase().endsWith(".docx")){ payload.docText = await docxToText(f); addLog("  DOCX text extracted"); }
-          else { addLog(`  Skipped unsupported file: ${f.name}`); continue; }
-
-          const json = await postToWorker(payload);
-          rows.push(rowFromJson(json, f.name));
-          addLog("  ✓ Extracted");
+          const payload={images:[],docText:""};
+          if(f.type==="application/pdf"){ payload.images=await pdfToImages(f); addLog(`  PDF pages → ${payload.images.length} image(s)`); }
+          else if(f.type.startsWith("image/")){ payload.images=[await imageToCompressedDataUrl(f)]; addLog("  Image compressed"); }
+          else if(f.name.toLowerCase().endsWith(".docx")){ payload.docText=await docxToText(f); addLog("  DOCX text extracted"); }
+          else{ addLog(`  Skipped unsupported file: ${f.name}`); continue; }
+          const json=await postToWorker(payload); rows.push(rowFromJson(json,f.name)); addLog("  ✓ Extracted");
           if(!isLoggedIn()) bumpTrial();
         }
         setStatus("Your Excel data is ready. Click “Review Excel” or “Download Excel”.");
         renderTable(); refreshTrialBanner();
-      }catch(err){
-        console.error(err);
-        setStatus(`Error: ${err.message}`);
-        addLog(`Error: ${err.message}\nTip: Check your login/session and that the Worker CORS allows credentials.`);
-      }
+      }catch(err){ console.error(err); setStatus(`Error: ${err.message}`); addLog(`Error: ${err.message}`); }
+    });
+    document.getElementById('reviewBtn').addEventListener('click', renderTable);
+    document.getElementById('downloadBtn').addEventListener('click', downloadExcel);
+    document.getElementById('resetBtn').addEventListener('click', ()=>{ rows.length=0; document.getElementById('previewTable').innerHTML=""; document.getElementById('tableWrap').hidden=true; document.getElementById('rowsBadge').hidden=true; setStatus("Session cleared."); });
+
+    // simple login modal markup (kept here so router stays minimal)
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="loginModal" class="modal" style="position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:1000">
+        <div class="panel" style="width:min(480px,92vw);">
+          <h3 class="h2" style="margin:0;">Login</h3>
+          <p class="body-lg" style="margin:6px 0;">Please contact us for full service and support.</p>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:12px">
+            <label>Username</label><input id="username" type="text" placeholder="your@email.com or username" style="padding:10px;border-radius:10px;border:1px solid var(--border)" />
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:12px">
+            <label>Password</label><input id="password" type="password" placeholder="••••••••" style="padding:10px;border-radius:10px;border:1px solid var(--border)" />
+          </div>
+          <div id="loginMsg" class="hint" style="margin-top:6px"></div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+            <button class="btn-ghost" id="closeLoginBtn">Cancel</button>
+            <button class="btn" id="doLoginBtn">Login</button>
+          </div>
+        </div>
+      </div>
+    `);
+    document.getElementById('closeLoginBtn').addEventListener('click', ()=>document.getElementById('loginModal').classList.remove('show'));
+    document.getElementById('openLoginBtn').addEventListener('click', ()=>document.getElementById('loginModal').classList.add('show'));
+    document.getElementById('doLoginBtn').addEventListener('click', async ()=>{
+      const u=document.getElementById('username').value.trim(), p=document.getElementById('password').value, msg=document.getElementById('loginMsg'); msg.textContent="";
+      try{
+        if(!u||!p) throw new Error("Enter username and password.");
+        const resp=await fetch(`${WORKER_ENDPOINT}/api/login`,{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})});
+        if(!resp.ok) throw new Error(await resp.text()||"Login failed");
+        const data=await resp.json(); setLoggedIn(true); setUsername(data.username||u); document.getElementById('loginModal').classList.remove('show'); setStatus("Logged in."); refreshTrialBanner();
+      }catch(e){ msg.textContent=e.message; msg.style.color="#ef4444"; }
     });
 
-    $('#reviewBtn').addEventListener('click', renderTable);
-    $('#downloadBtn').addEventListener('click', downloadExcel);
-    $('#resetBtn').addEventListener('click', ()=>{ rows.length=0; table.innerHTML=""; tableWrap.hidden=true; rowsBadge.hidden=true; setStatus("Session cleared. You can upload new files now."); });
-
-    // boot
     refreshTrialBanner();
   </script>
 </body>
