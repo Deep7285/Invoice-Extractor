@@ -1,145 +1,260 @@
 <!-- Front page file updated with login crendential page and upgraded UI-->
-<!doctype html>
+# Create a new enhanced index.html implementing the user's brief and fixes, then save for download.
+from pathlib import Path
+
+html = r"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <title>Data Extractor — AI invoice OCR to Excel</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- pdf.js -->
+  <!-- ======= Dependencies ======= -->
+  <!-- pdf.js: PDF → canvas -->
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
   </script>
-  <!-- Mammoth -->
+
+  <!-- Mammoth: DOCX → text -->
   <script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
-  <!-- SheetJS -->
+
+  <!-- SheetJS: Excel (fallback to CSV if blocked) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.19.3/xlsx.full.min.js"
           crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
+  <!-- ======= Theme (colors, type scale, grid hero like the reference) ======= -->
   <style>
     :root{
-      --bg:#2f4a83; --panel:#f5eeee; --ink:#0c1b2a; --muted:#5b6a7f; --brand:#1e66ff;
-      --brand-weak:#dfe9ff; --border:#e8e3e3;
-      --fs-xxl:clamp(30px,4.6vw,48px); --fs-xl:clamp(20px,2.6vw,28px);
-      --fs-lg:clamp(16px,2.0vw,18px); --fs-md:15px; --fs-sm:13px;
-      --radius:14px; --shadow:0 14px 30px rgba(0,0,0,.15);
+      /* ===== BRAND PALETTE ===== */
+      --bg:            #ffffff;      /* page background */
+      --hero-peach:    #fde8e4;      /* hero background */
+      --grid-line:     rgba(0,0,0,.06);
+      --panel:         #ffffff;      /* cards/panels */
+      --panel-alt:     #f8f5f4;      /* soft panel for extractor */
+      --ink:           #0b1324;      /* default text */
+      --muted:         #667084;      /* secondary text */
+      --brand:         #111827;      /* primary (dark for contrast) */
+      --brand-accent:  #1e66ff;      /* action accent */
+      --border:        #e5e7eb;      /* panel border */
+      --ok:            #22c55e;
+      --warn:          #f59e0b;
+      --err:           #ef4444;
+
+      /* ===== TYPE SCALE ===== */
+      --fs-xxl: clamp(32px, 5.4vw, 56px);  /* hero heading */
+      --fs-xl:  clamp(22px, 3.2vw, 34px);  /* section headings */
+      --fs-lg:  clamp(16px, 2.0vw, 18px);  /* large body */
+      --fs-md:  15px;                      /* body */
+      --fs-sm:  13px;                      /* small */
+
+      /* ===== RADIUS / SHADOW ===== */
+      --radius: 16px;
+      --radius-lg: 20px;
+      --shadow: 0 14px 30px rgba(0,0,0,.10);
+      --shadow-soft: 0 8px 18px rgba(0,0,0,.08);
     }
-    html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font:400 var(--fs-md)/1.5 system-ui,Arial,sans-serif}
-    a{color:var(--brand);text-decoration:none} a:hover{text-decoration:underline}
-    .container{max-width:1100px;margin:0 auto;padding:0 18px}
-    .hidden{display:none!important}
 
-    /* NEW: page router visibility + active tab style */
-    .page{display:none}
-    .page.active{display:block}
-    nav a.active{background:var(--brand);color:#fff}
+    /* ===== Global ===== */
+    html, body { margin:0; padding:0; background: var(--bg); color: var(--ink); font: 400 var(--fs-md)/1.58 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    a{ color: var(--brand-accent); text-decoration: none; }
+    a:hover{ text-decoration: underline; }
+    .container{ max-width: 1160px; margin: 0 auto; padding: 0 20px; }
+    .tag{ font-size: var(--fs-sm); color: var(--muted); }
 
-    header{background:#f6efef;position:sticky;top:0;z-index:50;border-bottom:1px solid var(--border)}
-    .header-wrap{display:flex;align-items:center;justify-content:space-between;height:64px;gap:18px}
-    .brand{display:flex;align-items:center;gap:12px;font-weight:800;font-size:clamp(22px,3.2vw,28px)}
-    .brand img{width:34px;height:34px;border-radius:8px}
-    nav{display:flex;align-items:center;gap:12px}
-    nav a{font-weight:600;padding:8px 14px;border-radius:999px;border:1px solid var(--border);background:#fff}
-    .btn-mini{padding:8px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;font-weight:700;cursor:pointer}
-    .badge{padding:4px 10px;border-radius:999px;font-size:13px;font-weight:700;background:var(--brand-weak);color:var(--ink);border:1px solid #c9d8ff}
+    /* ===== Header ===== */
+    header{
+      background: #fff;
+      position: sticky; top:0; z-index: 50;
+      border-bottom: 1px solid var(--border);
+    }
+    .header-wrap{
+      display:flex; align-items:center; justify-content:space-between;
+      height: 72px; gap: 18px;
+    }
+    .brand{
+      display:flex; align-items:center; gap: 12px;
+      font-weight: 900;
+      /* 50% larger brand title with clamp() */
+      font-size: clamp(26px, 3.8vw, 38px);
+      color: var(--brand);
+      letter-spacing: -0.02em;
+    }
+    .brand img{ width: 40px; height: 40px; border-radius: 10px; }
+    nav{ display:flex; align-items:center; gap: 12px; }
+    nav a, nav button{
+      font-weight: 600; padding: 10px 16px; border-radius: 999px;
+      color: var(--ink);
+      border:1px solid var(--border); background:#fff;
+      transition: background .15s ease, box-shadow .15s ease, transform .05s ease;
+    }
+    nav a:hover, nav button:hover{ background:#f9fafb; }
+    nav .btn{ border:0; background: var(--brand); color:#fff; }
+    nav .btn:hover{ filter: brightness(0.95); }
+    .badge{ padding: 5px 12px; border-radius: 999px; font-size: var(--fs-sm); font-weight: 800; background:#eef2ff; border:1px solid #d6dcff; color:#111827; }
+    .hidden{ display:none !important; }
 
-    .hero{padding:52px 0 72px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,0))}
-    .grid{display:grid;grid-template-columns:1.1fr .9fr;gap:28px}
-    .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:28px}
-    .h1{font-size:var(--fs-xxl);line-height:1.2;margin:0 0 18px}
-    .body-lg{font-size:var(--fs-lg);color:var(--muted)}
-    .actions{display:flex;gap:16px;margin-top:22px}
-    .btn{display:inline-flex;align-items:center;gap:8px;background:var(--brand);color:#fff;border:0;cursor:pointer;padding:12px 18px;border-radius:12px;font-weight:700;box-shadow:0 6px 14px rgba(30,102,255,.2)}
-    .btn-ghost{background:#fff;color:var(--ink);border:1px solid var(--border)}
-    .hint{font-size:var(--fs-sm);color:var(--muted);margin-top:8px}
-    .illustration{background:#fff;border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--border);height:360px;display:flex;align-items:center;justify-content:center}
-    .illustration img{width:100%;height:100%;object-fit:cover}
+    /* ===== Hero (Home) ===== */
+    .hero{
+      padding: 70px 0 88px;
+      background:
+        repeating-linear-gradient(0deg, transparent, transparent 46px, var(--grid-line) 47px, transparent 48px),
+        repeating-linear-gradient(90deg, transparent, transparent 46px, var(--grid-line) 47px, transparent 48px),
+        var(--hero-peach);
+    }
+    .grid{
+      display:grid; grid-template-columns: 1.05fr 0.95fr; gap: 28px; align-items: stretch;
+    }
+    .card{
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); box-shadow: var(--shadow);
+      padding: 30px;
+      display:flex; flex-direction:column; justify-content:space-between;
+    }
+    .h1{ font-size: var(--fs-xxl); line-height: 1.05; margin: 0 0 14px; letter-spacing: -0.02em; }
+    .body-lg{ font-size: var(--fs-lg); color: var(--muted); }
+    .actions{ display:flex; gap: 14px; margin-top: 20px; flex-wrap: wrap; }
+    .btn{
+      display:inline-flex; align-items:center; gap:8px;
+      background: var(--brand); color: #fff; border: 0; cursor: pointer;
+      padding: 13px 18px; border-radius: 14px; font-weight: 800;
+      box-shadow: 0 10px 20px rgba(17,24,39,.18);
+      transition: transform .05s ease, box-shadow .2s ease, filter .15s ease;
+    }
+    .btn:active{ transform: translateY(1px); box-shadow: 0 3px 10px rgba(0,0,0,.12); }
+    .btn-ghost{ background: #fff; color: var(--ink); border:1px solid var(--border); }
+    .hint{ font-size: var(--fs-sm); color: var(--muted); margin-top: 10px; }
+    .illustration{ background:#fff; border-radius: var(--radius-lg); overflow:hidden; box-shadow: var(--shadow-soft); border:1px solid var(--border); min-height: 360px; display:flex; align-items:center; justify-content:center; }
+    .illustration img{ width:100%; height:100%; object-fit: cover; }
 
-    .section{padding:38px 0 70px}
-    .panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px}
-    .h2{font-size:var(--fs-xl);margin:0 0 8px}
-    .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-    .actions-bar{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px}
-    .log{background:#fff;color:#0d1b2a;border-radius:10px;padding:12px;border:1px solid var(--border);margin-top:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;max-height:340px;overflow:auto}
-    .badge-small{background:var(--brand-weak);color:var(--ink);border-radius:999px;padding:4px 10px;font-size:var(--fs-sm);font-weight:700}
-    .table-wrap{overflow:auto;border:1px solid var(--border);border-radius:10px;margin-top:16px}
-    table{border-collapse:collapse;width:100%;background:#fff}
-    th,td{padding:10px 12px;border-bottom:1px solid #eaeaea;text-align:left;white-space:nowrap}
-    th{background:#f9f9fb;font-size:var(--fs-sm);letter-spacing:.02em}
+    /* ===== Extractor Page ===== */
+    .section{ padding: 48px 0 92px; }
+    .panel{ background: var(--panel-alt); border:1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); padding:24px; }
+    .h2{ font-size: var(--fs-xl); margin: 0 0 12px; letter-spacing: -0.01em; }
+    .row{ display:flex; gap: 12px; align-items:center; flex-wrap: wrap; }
+    .row .btn{ margin-right: 4px; }
+    .row .btn + .btn{ margin-left: 6px; }
+    .actions-bar{ display:flex; flex-wrap:wrap; gap: 14px; margin-top: 12px; }
+    .status{ font-size: var(--fs-sm); color: var(--muted); margin-top: 8px; }
+    .log{
+      background: #fff; color: #0d1b2a; border-radius: 12px; padding: 12px;
+      border:1px solid var(--border); margin-top: 14px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre-wrap; max-height: 340px; overflow:auto;
+    }
+    .badge-small{ background: #eef2ff; color: var(--ink); border-radius: 999px; padding:6px 12px; font-size: var(--fs-sm); font-weight:800; }
+    .table-wrap{ overflow:auto; border:1px solid var(--border); border-radius: 12px; margin-top: 16px; background:#fff; }
+    table{ border-collapse: collapse; width:100%; background:#fff; }
+    thead th{ position:sticky; top:0; background:#f3f4f6; }
+    th, td{ padding:11px 12px; border-bottom:1px solid #e5e7eb; text-align:left; white-space: nowrap; }
+    th{ font-size: var(--fs-sm); letter-spacing: .02em; }
+    td{ font-size: var(--fs-md); }
 
-    footer{background:#f6efef;border-top:1px solid var(--border)}
-    .footer-wrap{display:flex;align-items:center;justify-content:space-between;padding:14px 0;flex-wrap:wrap;gap:12px}
-    .contact{display:flex;align-items:center;gap:10px;color:var(--muted)}
-    .contact b{color:var(--ink)}
-    .contact a{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;background:#fff;border:1px solid var(--border)}
-    .contact img{width:18px;height:18px}
+    /* ===== Footer ===== */
+    footer{ background:#fff; border-top:1px solid var(--border); }
+    .footer-wrap{ display:flex; align-items:center; justify-content:space-between; padding: 18px 0; flex-wrap:wrap; gap:12px; }
+    .contact{ display:flex; align-items:center; gap: 10px; color: var(--muted); }
+    .contact b{ color: var(--ink); }
+    .contact a{ display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius: 10px; background:#fff; border:1px solid var(--border); }
+    .contact img{ width:18px; height:18px; }
 
-    @media (max-width:920px){
-      .grid{grid-template-columns:1fr}
-      .illustration{height:220px}
-      nav{gap:8px}
+    /* ===== Login Modal (client-side UI, real auth via Worker) ===== */
+    .modal{
+      position:fixed; inset:0; background: rgba(0,0,0,.45);
+      display:none; align-items:center; justify-content:center; z-index: 1000;
+    }
+    .modal.show{ display:flex; }
+    .modal-card{
+      width:min(520px, 92vw); background:#fff; border-radius:16px; padding:22px; box-shadow: var(--shadow);
+      border:1px solid var(--border);
+    }
+    .field{ display:flex; flex-direction:column; gap:6px; margin-top:12px; }
+    .field input{
+      border:1px solid var(--border); border-radius: 12px; padding: 11px 12px; font-size: var(--fs-md);
+      outline: none;
+    }
+    .field input:focus{ border-color: var(--brand-accent); box-shadow: 0 0 0 3px rgba(30,102,255,.12); }
+    .modal-actions{ display:flex; gap:10px; justify-content:flex-end; margin-top: 16px; }
+    .note{ color: var(--muted); font-size: var(--fs-sm); margin-top: 6px; }
+
+    /* ===== Mobile ===== */
+    @media (max-width: 980px){
+      .grid{ grid-template-columns: 1fr; }
+      .illustration{ min-height: 240px; }
+      nav{ gap: 8px; }
     }
   </style>
 </head>
+
 <body>
-  <!-- Header -->
+
+  <!-- ====================== HEADER ====================== -->
   <header>
     <div class="container header-wrap">
       <div class="brand">
         <img src="assets/logo.png" alt="Data Extractor logo" />
         <span>Data Extractor</span>
       </div>
+
+      <!-- Two-page navigation via hash anchors -->
       <nav>
-        <a href="#home">Home</a>
-        <a href="#extract">Invoice data extraction</a>
+        <a class="btn-ghost" href="#home">Home</a>
+        <a class="btn-ghost" href="#extract">Invoice data extraction</a>
         <span id="loginBadge" class="badge hidden"></span>
-        <button class="btn-mini" id="openLoginBtn">Login</button>
-        <button class="btn-mini hidden" id="logoutBtn">Logout</button>
+        <button class="btn" id="openLoginBtn">Login</button>
+        <button class="btn hidden" id="logoutBtn" style="background:#374151;">Logout</button>
       </nav>
     </div>
   </header>
 
-  <!-- HOME (page) -->
-  <main id="home" class="hero page">
+  <!-- ====================== HOME ====================== -->
+  <main id="home" class="hero">
     <div class="container">
       <div class="grid">
+        <!-- Left content -->
         <section class="card">
-          <h1 class="h1">Extract Data From Your Files with the<br/>AI-Powered OCR</h1>
-          <p class="body-lg">
-            Upload PDF / image (jpeg/jpg/png) / DOCX and get details such as
-            <b>GSTIN</b>, invoice number &amp; date, transaction id, taxable &amp; total amounts,
-            and full tax breakdown in a clean Excel file.
-          </p>
-          <div class="actions">
-            <a class="btn" href="#extract">Go to invoice data extraction</a>
-            <a class="btn-ghost" href="#contact">Learn more</a>
+          <div>
+            <h1 class="h1">Ingest invoices with<br/>next‑gen, AI‑powered OCR</h1>
+            <p class="body-lg">
+              Upload PDF / image (jpeg/jpg/png) / DOCX and get details such as
+              <b>GSTIN</b>, invoice number &amp; date, transaction id, taxable &amp; total amounts,
+              and full tax breakdown in a clean Excel file.
+            </p>
           </div>
-          <p class="hint">Tip: Nothing is stored server-side; files are processed in memory and discarded after extraction.</p>
+          <div>
+            <div class="actions">
+              <a class="btn" href="#extract">Go to invoice data extraction</a>
+              <a class="btn-ghost" href="#contact">Learn more</a>
+            </div>
+            <p class="hint">
+              Tip: Files are processed in memory; nothing is stored on our servers beyond extraction.
+            </p>
+          </div>
         </section>
+
+        <!-- Right visual (fallback to Unsplash if hero.png missing) -->
         <aside class="illustration">
-          <img src="assets/hero.png"
-               onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1555421689-43cad7100751?q=80&w=1470&auto=format&fit=crop';"
-               alt="Upload illustration" />
+          <img id="heroImg" src="assets/hero.png" alt="AI invoice OCR illustration"
+               onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1551836022-4c4c79ecde51?q=80&w=1470&auto=format&fit=crop';" />
         </aside>
       </div>
     </div>
   </main>
 
-  <!-- EXTRACTOR (page) -->
-  <section id="extract" class="section page">
+  <!-- ====================== EXTRACTOR ====================== -->
+  <section id="extract" class="section">
     <div class="container">
       <div class="panel">
         <h2 class="h2">Invoice Extractor</h2>
         <p class="body-lg" style="margin:0 0 10px;">
-          Please upload PDF / image (jpg/jpeg/png) / DOCX. One PDF may contain up to
+          Upload PDF / image (jpg/jpeg/png) / DOCX. One PDF may contain up to
           <b>10 pages</b>. Public trial is limited (<span id="trialInfo"></span>).
         </p>
 
         <div class="row" style="margin-top:10px;">
           <input id="fileInput" type="file" multiple accept=".pdf,.docx,image/*" />
-          <button id="extractBtn" class="btn">Extract</button>
+          <button id="extractBtn" class="btn" style="background:var(--brand-accent);">Extract</button>
           <span id="rowsBadge" class="badge-small" hidden>0 rows</span>
         </div>
 
@@ -149,8 +264,9 @@
           <button id="resetBtn" class="btn-ghost">Reset session</button>
         </div>
 
-        <div id="status" class="hint" style="margin-top:8px;"></div>
+        <div id="status" class="status"></div>
         <pre id="log" class="log" hidden></pre>
+
         <div id="tableWrap" class="table-wrap" hidden>
           <table id="previewTable"></table>
         </div>
@@ -158,203 +274,383 @@
     </div>
   </section>
 
-  <!-- Footer -->
+  <!-- ====================== FOOTER ====================== -->
   <footer id="contact">
     <div class="container footer-wrap">
-      <div class="hint">© 2025 Data Extractor</div>
+      <div class="tag">© 2025 Data Extractor</div>
       <div class="contact">
         <b>Contact Us @</b>
-        <a href="mailto:deepak72855@gmail.com"><img src="assets/gmail.png" alt=""> deepak72855@gmail.com</a>
-        <a href="https://www.linkedin.com/in/deepak8439/" target="_blank" rel="noopener">
-          <img src="assets/linkedin.png" alt=""> LinkedIn
+        <a href="mailto:deepak72855@gmail.com" title="Email">
+          <img src="assets/gmail.png" alt="Gmail icon" /> deepak72855@gmail.com
+        </a>
+        <a href="https://www.linkedin.com/in/deepak8439/" target="_blank" rel="noopener" title="LinkedIn">
+          <img src="assets/linkedin.png" alt="LinkedIn icon" /> LinkedIn
         </a>
       </div>
     </div>
   </footer>
 
-  <!-- ===== APP SCRIPT ===== -->
+  <!-- ====================== LOGIN MODAL ====================== -->
+  <div id="loginModal" class="modal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+      <h3 id="loginTitle" class="h2" style="margin:0;">Login</h3>
+      <p class="body-lg" style="margin:6px 0 6px;">
+        Please contact us for full service and support.
+      </p>
+
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" type="text" autocomplete="username" placeholder="your@email.com or username" />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" />
+      </div>
+      <div class="note" id="loginMsg"></div>
+
+      <div class="modal-actions">
+        <button class="btn-ghost" id="closeLoginBtn">Cancel</button>
+        <button class="btn" id="doLoginBtn">Login</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================== APP SCRIPT ====================== -->
   <script>
-    /* ---------- Simple router: show only one page (#home or #extract) ---------- */
-    function showPage(hash){
-      if(hash !== '#extract') hash = '#home';
-      document.querySelectorAll('.page')
-        .forEach(el => el.classList.toggle('active', '#'+el.id === hash));
-      document.querySelectorAll('nav a')
-        .forEach(a => a.classList.toggle('active', a.getAttribute('href') === hash));
-      window.scrollTo(0,0);
-    }
-    window.addEventListener('hashchange', ()=>showPage(location.hash));
-    document.addEventListener('DOMContentLoaded', ()=>showPage(location.hash || '#home'));
-
-    /* ---------- App config (same as before) ---------- */
+    /******************************************************************
+     * CONFIG — Change these safely
+     ******************************************************************/
+    // Your Workers.dev (remote) endpoint. For local dev, set to "http://127.0.0.1:8787"
     const WORKER_ENDPOINT = "https://invoice-worker.deepak72855.workers.dev";
-    const TRIAL_MAX_ATTEMPTS = 3, TRIAL_MAX_PAGES = 1, MAX_PAGES_PER_PDF = 10;
-    const JPEG_QUALITY = 0.7, TARGET_WIDTH = 1300;
-    const LS_TRIAL_COUNT="de_trial_count_v1", LS_LOGGED_IN="de_logged_in_v1", LS_USERNAME="de_username_v1";
 
-    const $ = s => document.querySelector(s);
-    const statusEl = $('#status'), logEl = $('#log'), rowsBadge = $('#rowsBadge');
-    const tableWrap = $('#tableWrap'), table = $('#previewTable'), trialInfo = $('#trialInfo');
-    const loginBadgeEl = $('#loginBadge'), loginBtn = $('#openLoginBtn'), logoutBtn = $('#logoutBtn');
+    // Trial limits (public use before login)
+    const TRIAL_MAX_ATTEMPTS = 3;   // total files you can process when not logged in
+    const TRIAL_MAX_PAGES    = 1;   // each PDF must be <= this page count in trial
+    const MAX_PAGES_PER_PDF  = 10;  // hard page limit enforced by UI
 
-    const setStatus = m => statusEl.textContent = m;
-    const addLog = m => { logEl.hidden=false; logEl.textContent += m + "\n"; };
+    // Client-side image processing
+    const JPEG_QUALITY       = 0.7;       // compression (0..1)
+    const TARGET_WIDTH       = 1300;      // long-edge resize for images
 
-    const getTrialCount = () => Number(localStorage.getItem(LS_TRIAL_COUNT) || 0);
-    const bumpTrial     = () => localStorage.setItem(LS_TRIAL_COUNT, String(getTrialCount()+1));
-    const isLoggedIn    = () => localStorage.getItem(LS_LOGGED_IN) === "1";
-    const setLoggedIn   = v => localStorage.setItem(LS_LOGGED_IN, v ? "1" : "0");
-    const getUsername   = () => localStorage.getItem(LS_USERNAME) || "";
-    const setUsername   = u => u ? localStorage.setItem(LS_USERNAME,u) : localStorage.removeItem(LS_USERNAME);
-    function updateLoginBadge(u){ if(u){loginBadgeEl.textContent=`Logged in as ${u}`;loginBadgeEl.classList.remove('hidden');} else {loginBadgeEl.textContent="";loginBadgeEl.classList.add('hidden');}}
-    function refreshTrialBanner(){
-      if(isLoggedIn()){ trialInfo.textContent="Logged-in (no trial limits)"; loginBtn.classList.add('hidden'); logoutBtn.classList.remove('hidden'); }
-      else{ trialInfo.textContent=`${TRIAL_MAX_ATTEMPTS - getTrialCount()} attempt(s) left • 1 page max per PDF`; loginBtn.classList.remove('hidden'); logoutBtn.classList.add('hidden'); }
-      updateLoginBadge(isLoggedIn()?getUsername():"");
-    }
+    // localStorage keys
+    const LS_TRIAL_COUNT   = "de_trial_count_v1";
+    const LS_LOGGED_IN     = "de_logged_in_v1"; // UI hint only; server remains source of truth
+    const LS_FP            = "de_trial_fingerprint_v1"; // simple fingerprint to reduce resets
 
-    $('#openLoginBtn').addEventListener('click', ()=>document.getElementById('loginModal').classList.add('show'));
-    document.getElementById('closeLoginBtn')?.addEventListener('click', ()=>document.getElementById('loginModal').classList.remove('show'));
-    document.getElementById('doLoginBtn')?.addEventListener('click', async ()=>{
-      const u = document.getElementById('username').value.trim();
-      const p = document.getElementById('password').value;
-      const msg = document.getElementById('loginMsg'); msg.textContent="";
+    /******************************************************************
+     * Simple fingerprint (user agent + day salt)
+     ******************************************************************/
+    (function ensureFingerprint(){
       try{
-        if(!u||!p) throw new Error("Enter username and password.");
-        const resp = await fetch(`${WORKER_ENDPOINT}/api/login`,{
-          method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({username:u,password:p})
-        });
-        if(!resp.ok) throw new Error(await resp.text()||"Login failed");
-        const data = await resp.json();
-        setLoggedIn(true); setUsername(data.username||u);
-        document.getElementById('loginModal').classList.remove('show');
-        setStatus("Logged in. Trial limits lifted for this browser."); refreshTrialBanner();
-      }catch(e){ msg.textContent=e.message; msg.style.color="#ef4444"; }
-    });
-    logoutBtn.addEventListener('click', async ()=>{
-      try{ await fetch(`${WORKER_ENDPOINT}/api/logout`,{method:"POST",credentials:"include"}); }catch{}
-      setLoggedIn(false); setUsername(""); setStatus("Logged out."); refreshTrialBanner();
-    });
+        if(!localStorage.getItem(LS_FP)){
+          const salt = new Date().toISOString().slice(0,10); // day-level salt
+          const fp = btoa([navigator.userAgent, salt].join("|"));
+          localStorage.setItem(LS_FP, fp);
+        }
+      }catch{} // ignore
+    })();
 
-    function fileToDataUrl(file){ return new Promise(res=>{const r=new FileReader(); r.onload=e=>res(e.target.result); r.readAsDataURL(file);}); }
-    async function pdfToImages(file){
-      const dataUrl = await fileToDataUrl(file);
-      const pdf = await pdfjsLib.getDocument({ url:dataUrl }).promise;
-      if(!isLoggedIn() && pdf.numPages > 1) throw new Error(`Trial allows only ${TRIAL_MAX_PAGES} page per PDF.`);
-      const pages = Math.min(pdf.numPages, MAX_PAGES_PER_PDF), out=[];
-      for(let p=1;p<=pages;p++){
-        const page = await pdf.getPage(p);
-        const scale = TARGET_WIDTH / page.getViewport({scale:1}).width;
-        const vp = page.getViewport({scale});
-        const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
-        canvas.width=Math.floor(vp.width); canvas.height=Math.floor(vp.height);
-        await page.render({canvasContext:ctx,viewport:vp}).promise;
-        out.push(canvas.toDataURL('image/jpeg',0.7));
+    /******************************************************************
+     * DOM shortcuts
+     ******************************************************************/
+    const $ = sel => document.querySelector(sel);
+    const statusEl = $('#status');
+    const logEl    = $('#log');
+    const rowsBadge= $('#rowsBadge');
+    const tableWrap= $('#tableWrap');
+    const table    = $('#previewTable');
+    const trialInfo= $('#trialInfo');
+    const loginBadge= $('#loginBadge');
+    const logoutBtn= $('#logoutBtn');
+
+    const addLog = (msg) => { logEl.hidden = false; logEl.textContent += msg + "\\n"; };
+    const setStatus = (msg) => { statusEl.textContent = msg; };
+
+    /******************************************************************
+     * LOGIN (UI talks to Worker real auth)
+     ******************************************************************/
+    function isLoggedIn(){ return localStorage.getItem(LS_LOGGED_IN) === "1"; }
+    function setLoggedIn(val){
+      localStorage.setItem(LS_LOGGED_IN, val ? "1" : "0");
+      logoutBtn.classList.toggle('hidden', !val);
+      loginBadge.textContent = val ? "Logged in" : "";
+      loginBadge.classList.toggle('hidden', !val);
+      refreshTrialBanner();
+    }
+
+    async function doLogin(u, p){
+      const body = new URLSearchParams({ username: u, password: p });
+      const resp = await fetch(WORKER_ENDPOINT + "/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+        credentials: "include"
+      });
+      if(!resp.ok){
+        let msg = "Login failed";
+        try{ const {error} = await resp.json(); if(error) msg = error; }catch{}
+        throw new Error(msg + " (" + resp.status + ")");
       }
-      return out;
-    }
-    async function imageToCompressedDataUrl(file){
-      const dataUrl = await fileToDataUrl(file);
-      const img = new Image(); await new Promise(res=>{img.onload=res; img.src=dataUrl;});
-      const scale = img.width > TARGET_WIDTH ? TARGET_WIDTH/img.width : 1;
-      const canvas=document.createElement('canvas'); canvas.width=Math.floor(img.width*scale); canvas.height=Math.floor(img.height*scale);
-      canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
-      return canvas.toDataURL('image/jpeg',0.7);
-    }
-    async function docxToText(file){ const ab=await file.arrayBuffer(); const r=await window.mammoth.extractRawText({arrayBuffer:ab}); return r.value||""; }
-
-    async function postToWorker(payload){
-      const form = new FormData();
-      payload.images?.forEach(u=>form.append('images_dataurl[]',u));
-      if(payload.docText) form.append('doc_text',payload.docText);
-      const resp = await fetch(`${WORKER_ENDPOINT}/api/extract`,{method:'POST',body:form,credentials:"include"});
-      if(!resp.ok) throw new Error(`Worker ${resp.status}: ${(await resp.text().catch(()=>'')) || 'request failed'}`);
       return resp.json();
     }
 
-    const rows=[]; function rowFromJson(json,src){
-      const s=json?.seller||{}, i=json?.invoice||{}, a=json?.amounts||{}, taxes=Array.isArray(json?.taxes)?json.taxes:[];
-      const breakdown = taxes.map(t=>`${t.type||'TAX'} ${t.rate_percent??''}%:${t.amount??''}`).join('; ');
-      return { SELLER_NAME:s.company_name||null, SELLER_GSTIN:s.gstin||null, SELLER_ADDRESS:s.address||null,
-        INVOICE_NUMBER:i.number||null, INVOICE_DATE:i.date||null, TRANSACTION_ID:i.transaction_id||null,
-        TAXABLE_AMOUNT:a.taxable_amount??null, TOTAL_AMOUNT:a.total_amount??null, TAX_BREAKDOWN:breakdown||null, SOURCE_FILE:src||null };
-    }
-    function renderTable(){
-      if(!rows.length){ document.getElementById('tableWrap').hidden=true; return; }
-      const cols=Object.keys(rows[0]);
-      document.getElementById('previewTable').innerHTML =
-        `<thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>` +
-        `<tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${r[c]??''}</td>`).join('')}</tr>`).join('')}</tbody>`;
-      document.getElementById('tableWrap').hidden=false;
-      document.getElementById('rowsBadge').hidden=false;
-      document.getElementById('rowsBadge').textContent = `${rows.length} row(s)`;
-    }
-    function downloadExcel(){
-      if(!rows.length) return setStatus("Nothing to download yet.");
-      try{ const ws=XLSX.utils.json_to_sheet(rows), wb=XLSX.utils.book_new();
-           XLSX.utils.book_append_sheet(wb,ws,"Invoices"); XLSX.writeFile(wb,"invoices_gpt.xlsx"); }
-      catch(e){ const csv=[Object.keys(rows[0]).join(','),...rows.map(r=>Object.values(r).map(v=>`"${(v??'').toString().replaceAll('"','""')}"`).join(','))].join('\n');
-                const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}); const a=document.createElement('a');
-                a.href=URL.createObjectURL(blob); a.download="invoices_gpt.csv"; a.click(); }
+    async function doLogout(){
+      try{
+        await fetch(WORKER_ENDPOINT + "/api/logout", { method: "POST", credentials: "include" });
+      }catch{ /* ignore */ }
+      setLoggedIn(false);
+      setStatus("Logged out.");
     }
 
-    document.getElementById('extractBtn').addEventListener('click', async ()=>{
+    $('#openLoginBtn').addEventListener('click', () => { $('#loginModal').classList.add('show'); });
+    $('#closeLoginBtn').addEventListener('click', () => { $('#loginModal').classList.remove('show'); });
+    $('#doLoginBtn').addEventListener('click', async () => {
+      const u = $('#username').value.trim();
+      const p = $('#password').value;
+      $('#loginMsg').textContent = "";
       try{
-        if(!isLoggedIn() && getTrialCount() >= TRIAL_MAX_ATTEMPTS) throw new Error("Trial limit reached. Please login.");
-        const files=Array.from(document.getElementById('fileInput').files||[]); if(!files.length) throw new Error("Please choose at least one file.");
-        setStatus("Processing…"); document.getElementById('log').hidden=true; document.getElementById('tableWrap').hidden=true;
-        for(const f of files){
-          addLog(`• Processing “${f.name}” …`);
-          const payload={images:[],docText:""};
-          if(f.type==="application/pdf"){ payload.images=await pdfToImages(f); addLog(`  PDF pages → ${payload.images.length} image(s)`); }
-          else if(f.type.startsWith("image/")){ payload.images=[await imageToCompressedDataUrl(f)]; addLog("  Image compressed"); }
-          else if(f.name.toLowerCase().endsWith(".docx")){ payload.docText=await docxToText(f); addLog("  DOCX text extracted"); }
-          else{ addLog(`  Skipped unsupported file: ${f.name}`); continue; }
-          const json=await postToWorker(payload); rows.push(rowFromJson(json,f.name)); addLog("  ✓ Extracted");
-          if(!isLoggedIn()) bumpTrial();
+        if(!u || !p) throw new Error("Enter username and password.");
+        await doLogin(u,p);
+        setLoggedIn(true); $('#loginModal').classList.remove('show');
+        setStatus("Logged in. Trial limits lifted for this browser.");
+      }catch(e){
+        $('#loginMsg').textContent = e.message;
+        $('#loginMsg').style.color = "var(--err)";
+      }
+    });
+    logoutBtn.addEventListener('click', doLogout);
+
+    function refreshTrialBanner(){
+      if(isLoggedIn()){
+        trialInfo.textContent = "Logged-in (no trial limits)";
+      } else {
+        const remaining = TRIAL_MAX_ATTEMPTS - (Number(localStorage.getItem(LS_TRIAL_COUNT) || 0));
+        trialInfo.textContent = `${Math.max(0, remaining)} attempt(s) left • 1 page max per PDF`;
+      }
+    }
+
+    function bumpTrial(){
+      localStorage.setItem(LS_TRIAL_COUNT, String(Number(localStorage.getItem(LS_TRIAL_COUNT) || 0) + 1));
+    }
+
+    /******************************************************************
+     * FILE HELPERS (PDF → JPEG, IMG compress, DOCX → text)
+     ******************************************************************/
+    function fileToDataUrl(file){
+      return new Promise(res=>{
+        const r = new FileReader();
+        r.onload = e => res(e.target.result);
+        r.readAsDataURL(file);
+      });
+    }
+
+    async function pdfToImages(file){
+      const dataUrl = await fileToDataUrl(file);
+      const pdf = await pdfjsLib.getDocument({ url: dataUrl }).promise;
+
+      // Trial guard: enforce <= 1 page when not logged in
+      if(!isLoggedIn() && pdf.numPages > TRIAL_MAX_PAGES){
+        throw new Error(`Trial mode allows only ${TRIAL_MAX_PAGES} page per PDF.`);
+      }
+
+      const pages = Math.min(pdf.numPages, MAX_PAGES_PER_PDF);
+      const out = [];
+      for (let p=1; p<=pages; p++){
+        const page = await pdf.getPage(p);
+        const viewport = page.getViewport({ scale: 1.5 });
+        const scale = TARGET_WIDTH / viewport.width;
+        const vp = page.getViewport({ scale });
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = Math.floor(vp.width);
+        canvas.height = Math.floor(vp.height);
+
+        await page.render({ canvasContext: ctx, viewport: vp }).promise;
+        out.push(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
+      }
+      return out;
+    }
+
+    async function imageToCompressedDataUrl(file){
+      const dataUrl = await fileToDataUrl(file);
+      const img = new Image();
+      await new Promise(res=>{ img.onload = res; img.src = dataUrl; });
+      const scale = img.width > TARGET_WIDTH ? TARGET_WIDTH / img.width : 1;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.floor(img.width * scale);
+      canvas.height = Math.floor(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+    }
+
+    async function docxToText(file){
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await window.mammoth.extractRawText({ arrayBuffer });
+      return result.value || "";
+    }
+
+    /******************************************************************
+     * POST to Worker (auth cookie included)
+     ******************************************************************/
+    async function postToWorker(payload){
+      const form = new FormData();
+      if(payload.images?.length){
+        payload.images.forEach(u => form.append('images_dataurl[]', u));
+      }
+      if(payload.docText){
+        form.append('doc_text', payload.docText);
+      }
+
+      try{
+        const resp = await fetch(`${WORKER_ENDPOINT}/api/extract`, {
+          method:'POST', body: form, credentials:'include'
+        });
+        if(resp.status === 401){
+          throw new Error("Unauthorized. Please log in to continue.");
         }
-        setStatus("Your Excel data is ready. Click “Review Excel” or “Download Excel”.");
-        renderTable(); refreshTrialBanner();
-      }catch(err){ console.error(err); setStatus(`Error: ${err.message}`); addLog(`Error: ${err.message}`); }
-    });
-    document.getElementById('reviewBtn').addEventListener('click', renderTable);
-    document.getElementById('downloadBtn').addEventListener('click', downloadExcel);
-    document.getElementById('resetBtn').addEventListener('click', ()=>{ rows.length=0; document.getElementById('previewTable').innerHTML=""; document.getElementById('tableWrap').hidden=true; document.getElementById('rowsBadge').hidden=true; setStatus("Session cleared."); });
+        if(!resp.ok){
+          let t=""; try{ t = await resp.text(); }catch(e){}
+          throw new Error(`Worker ${resp.status}: ${t}`);
+        }
+        return resp.json();
+      } catch(err){
+        // Convert fetch/network/CORS errors into friendlier message
+        if (err && (err.name === "TypeError" || String(err).includes("Failed to fetch"))) {
+          throw new Error("Network/CORS error. Ensure the Worker allows your GitHub Pages origin and handles OPTIONS with Access-Control-Allow-Credentials: true.");
+        }
+        throw err;
+      }
+    }
 
-    // simple login modal markup (kept here so router stays minimal)
-    document.body.insertAdjacentHTML('beforeend', `
-      <div id="loginModal" class="modal" style="position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:1000">
-        <div class="panel" style="width:min(480px,92vw);">
-          <h3 class="h2" style="margin:0;">Login</h3>
-          <p class="body-lg" style="margin:6px 0;">Please contact us for full service and support.</p>
-          <div style="display:flex;flex-direction:column;gap:6px;margin-top:12px">
-            <label>Username</label><input id="username" type="text" placeholder="your@email.com or username" style="padding:10px;border-radius:10px;border:1px solid var(--border)" />
-          </div>
-          <div style="display:flex;flex-direction:column;gap:6px;margin-top:12px">
-            <label>Password</label><input id="password" type="password" placeholder="••••••••" style="padding:10px;border-radius:10px;border:1px solid var(--border)" />
-          </div>
-          <div id="loginMsg" class="hint" style="margin-top:6px"></div>
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
-            <button class="btn-ghost" id="closeLoginBtn">Cancel</button>
-            <button class="btn" id="doLoginBtn">Login</button>
-          </div>
-        </div>
-      </div>
-    `);
-    document.getElementById('closeLoginBtn').addEventListener('click', ()=>document.getElementById('loginModal').classList.remove('show'));
-    document.getElementById('openLoginBtn').addEventListener('click', ()=>document.getElementById('loginModal').classList.add('show'));
-    document.getElementById('doLoginBtn').addEventListener('click', async ()=>{
-      const u=document.getElementById('username').value.trim(), p=document.getElementById('password').value, msg=document.getElementById('loginMsg'); msg.textContent="";
+    /******************************************************************
+     * REVIEW TABLE + EXCEL DOWNLOAD (dynamic header)
+     ******************************************************************/
+    const rows = []; // appended until reset
+
+    function rowFromJson(json, src){
+      const s = json?.seller || {};
+      const i = json?.invoice || {};
+      const a = json?.amounts || {};
+      const taxes = Array.isArray(json?.taxes) ? json.taxes : [];
+      const breakdown = taxes.map(t=>`${t.type||'TAX'} ${t.rate_percent ?? ''}%:${t.amount ?? ''}`).join('; ');
+      return {
+        SELLER_NAME:    s.company_name || null,
+        SELLER_GSTIN:   s.gstin || null,
+        SELLER_ADDRESS: s.address || null,
+        INVOICE_NUMBER: i.number || null,
+        INVOICE_DATE:   i.date || null,
+        TRANSACTION_ID: i.transaction_id || null,
+        TAXABLE_AMOUNT: a.taxable_amount ?? null,
+        TOTAL_AMOUNT:   a.total_amount ?? null,
+        TAX_BREAKDOWN:  breakdown || null,
+        SOURCE_FILE:    src || null
+      };
+    }
+
+    function renderTable(){
+      if(!rows.length){ tableWrap.hidden = true; return; }
+      const cols = Object.keys(rows[0]);
+      const thead = `<thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>`;
+      const tbody = `<tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${r[c]??''}</td>`).join('')}</tr>`).join('')}</tbody>`;
+      table.innerHTML = thead + tbody;
+      tableWrap.hidden = false;
+      rowsBadge.hidden = false;
+      rowsBadge.textContent = `${rows.length} row(s)`;
+    }
+
+    function downloadExcel(){
+      if(!rows.length){ setStatus("Nothing to download yet."); return; }
       try{
-        if(!u||!p) throw new Error("Enter username and password.");
-        const resp=await fetch(`${WORKER_ENDPOINT}/api/login`,{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})});
-        if(!resp.ok) throw new Error(await resp.text()||"Login failed");
-        const data=await resp.json(); setLoggedIn(true); setUsername(data.username||u); document.getElementById('loginModal').classList.remove('show'); setStatus("Logged in."); refreshTrialBanner();
-      }catch(e){ msg.textContent=e.message; msg.style.color="#ef4444"; }
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Invoices");
+        XLSX.writeFile(wb, "invoices.xlsx");
+      }catch(e){
+        // Fallback to CSV
+        const headers = Object.keys(rows[0]);
+        const csv = [headers.join(",")]
+          .concat(rows.map(r=>headers.map(h=>`"${String(r[h]??"").replaceAll('"','""')}"`).join(",")))
+          .join("\n");
+        const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = "invoices.csv";
+        a.click();
+      }
+    }
+
+    /******************************************************************
+     * MAIN: Extract flow
+     ******************************************************************/
+    $('#extractBtn').addEventListener('click', async () => {
+      try{
+        // Trial guard (count)
+        if(!isLoggedIn()){
+          const tries = Number(localStorage.getItem(LS_TRIAL_COUNT) || 0);
+          if(tries >= TRIAL_MAX_ATTEMPTS){
+            $('#openLoginBtn').click();
+            throw new Error("Trial limit reached. Please login for full access.");
+          }
+        }
+
+        const files = Array.from($('#fileInput').files || []);
+        if(!files.length) throw new Error("Please choose at least one file.");
+        setStatus("Processing…"); logEl.hidden = true; tableWrap.hidden = true;
+
+        for (const f of files){
+          addLog(`• Processing “${f.name}” …`);
+          let payload = { images:[], docText:"" };
+
+          if (f.type === "application/pdf"){
+            const imgs = await pdfToImages(f);
+            payload.images = imgs;
+            addLog(`  PDF pages → ${imgs.length} image(s)`);
+          } else if (f.type.startsWith("image/")){
+            payload.images = [ await imageToCompressedDataUrl(f) ];
+            addLog("  Image compressed");
+          } else if (f.name.toLowerCase().endsWith(".docx")){
+            payload.docText = await docxToText(f);
+            addLog("  DOCX text extracted");
+          } else {
+            addLog(`  Skipped unsupported file: ${f.name}`);
+            continue;
+          }
+
+          const json = await postToWorker(payload);
+          rows.push(rowFromJson(json, f.name));
+          addLog("  ✓ Extracted");
+
+          // consume one public attempt per processed file
+          if(!isLoggedIn()){
+            bumpTrial();
+          }
+        }
+
+        setStatus("Your Excel data is ready. Click “Review Excel” or “Download Excel”.");
+        renderTable();
+        refreshTrialBanner();
+      } catch(err){
+        console.error(err);
+        setStatus(`Error: ${err.message}`);
+        addLog(`Error: ${err.message}`);
+      }
     });
 
+    $('#reviewBtn').addEventListener('click', renderTable);
+    $('#downloadBtn').addEventListener('click', downloadExcel);
+    $('#resetBtn').addEventListener('click', () => {
+      rows.length = 0; table.innerHTML=""; tableWrap.hidden = true; rowsBadge.hidden = true;
+      setStatus("Session cleared. You can upload new files now.");
+    });
+
+    // Init trial banner on load
     refreshTrialBanner();
+    logoutBtn.classList.toggle('hidden', !isLoggedIn());
   </script>
 </body>
 </html>
+"""
+Path("/mnt/data/index.html").write_text(html, encoding="utf-8")
+print("Saved to /mnt/data/index.html")
