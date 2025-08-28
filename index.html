@@ -1,47 +1,61 @@
-<!-- Front page file updated with login crendential page and upgraded UI-->
- <!doctype html>
+<!--
+  index.html — Data Extractor
+  -------------------------------------------
+  Single-file app with two "pages" (HOME & EXTRACT) driven by hash routing.
+  The "inner-page" feel is achieved by hiding/showing sections based on the URL hash
+  without navigating away. Background, header, and layout stay consistent.
+-->
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Data Extractor — AI invoice OCR to Excel</title>
+  <title>AI powered data extractor OCR </title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- ======= Dependencies ======= -->
-  <!-- pdf.js: PDF → canvas -->
+  <!-- =============================================================
+       DEPENDENCIES (3rd-party client libs)
+       -------------------------------------------------------------
+       - pdf.js       : Render PDF pages to canvas → JPEG data URLs
+       - Mammoth.js   : Extract raw text from DOCX
+       - SheetJS      : Build and download Excel (CSV fallback)
+       Each library is loaded from a CDN. Versions pinned for stability.
+  =============================================================== -->
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script>
+    /* pdf.js worker path config */
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
   </script>
-
-  <!-- Mammoth: DOCX → text -->
   <script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
-
-  <!-- SheetJS: Excel (fallback to CSV if blocked) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.19.3/xlsx.full.min.js"
           crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
-  <!-- ======= Theme (colors, type scale, grid hero like the reference) ======= -->
+  <!-- =============================================================
+       THEME (Design Tokens)
+       -------------------------------------------------------------
+       All color, spacing, radius, and type tokens live here.
+       Change these to re-skin the site without touching component code.
+  =============================================================== -->
   <style>
     :root{
       /* ===== BRAND PALETTE ===== */
-      --bg:            #ffffff;      /* page background */
-      --hero-peach:    #fde8e4;      /* hero background */
-      --grid-line:     rgba(0,0,0,.06);
-      --panel:         #ffffff;      /* cards/panels */
-      --panel-alt:     #f8f5f4;      /* soft panel for extractor */
-      --ink:           #0b1324;      /* default text */
-      --muted:         #667084;      /* secondary text */
-      --brand:         #111827;      /* primary (dark for contrast) */
-      --brand-accent:  #1e66ff;      /* action accent */
-      --border:        #e5e7eb;      /* panel border */
+      --bg:            #ffffff;         /* page background */
+      --hero-peach:    #fde8e4;         /* peach band */
+      --grid-line:     rgba(0,0,0,.06); /* grid overlay line */
+      --panel:         #ffffff;         /* cards/panels */
+      --panel-alt:     #f8f5f4;         /* soft panel for extractor */
+      --ink:           #0b1324;         /* body text */
+      --muted:         #667084;         /* secondary text */
+      --brand:         #111827;         /* brand black for titles */
+      --brand-accent:  #1e66ff;         /* CTA blue */
+      --border:        #e5e7eb;         /* subtle borders */
       --ok:            #22c55e;
       --warn:          #f59e0b;
       --err:           #ef4444;
 
       /* ===== TYPE SCALE ===== */
       --fs-xxl: clamp(32px, 5.4vw, 56px);  /* hero heading */
-      --fs-xl:  clamp(22px, 3.2vw, 34px);  /* section headings */
+      --fs-xl:  clamp(22px, 3.0vw, 34px);  /* section headings */
       --fs-lg:  clamp(16px, 2.0vw, 18px);  /* large body */
       --fs-md:  15px;                      /* body */
       --fs-sm:  13px;                      /* small */
@@ -53,140 +67,155 @@
       --shadow-soft: 0 8px 18px rgba(0,0,0,.08);
     }
 
-    /* ===== Global ===== */
-    html, body { margin:0; padding:0; background: var(--bg); color: var(--ink); font: 400 var(--fs-md)/1.58 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    /* =============================================================
+       GLOBAL LAYOUT & UTILS
+       -------------------------------------------------------------
+       - Base typography
+       - Container width
+       - Generic helpers (badges, hidden)
+    =============================================================== */
+    html, body { margin:0; padding:0; background: var(--bg); color: var(--ink);
+      font: 400 var(--fs-md)/1.58 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
     a{ color: var(--brand-accent); text-decoration: none; }
     a:hover{ text-decoration: underline; }
     .container{ max-width: 1160px; margin: 0 auto; padding: 0 20px; }
+    .hidden{ display:none !important; }
     .tag{ font-size: var(--fs-sm); color: var(--muted); }
 
-    /* ===== Header ===== */
-    header{
-      background: #fff;
-      position: sticky; top:0; z-index: 50;
-      border-bottom: 1px solid var(--border);
-    }
-    .header-wrap{
-      display:flex; align-items:center; justify-content:space-between;
-      height: 72px; gap: 18px;
-    }
-    .brand{
-      display:flex; align-items:center; gap: 12px;
-      font-weight: 900;
-      /* 50% larger brand title with clamp() */
-      font-size: clamp(26px, 3.8vw, 38px);
-      color: var(--brand);
-      letter-spacing: -0.02em;
-    }
-    .brand img{ width: 40px; height: 40px; border-radius: 10px; }
-    nav{ display:flex; align-items:center; gap: 12px; }
-    nav a, nav button{
-      font-weight: 600; padding: 10px 16px; border-radius: 999px;
-      color: var(--ink);
-      border:1px solid var(--border); background:#fff;
-      transition: background .15s ease, box-shadow .15s ease, transform .05s ease;
-    }
+    /* =============================================================
+       HEADER (Persistent across "pages")
+       -------------------------------------------------------------
+       - Sticky header with brand on the left and nav on the right
+       - The long nav label collapses on small screens (see MOBILE).
+    =============================================================== */
+    header{ background:#fff; position: sticky; top:0; z-index:50; border-bottom: 1px solid var(--border); }
+    .header-wrap{ display:flex; align-items:center; justify-content:space-between; height:72px; gap:18px; }
+    .brand{ display:flex; align-items:center; gap:12px; font-weight:900;
+      font-size: clamp(26px, 3.8vw, 38px); color: var(--brand); letter-spacing:-0.02em; }
+    .brand img{ width:40px; height:40px; border-radius:10px; }
+    nav{ display:flex; align-items:center; gap:10px; }
+    nav a, nav button{ font-weight:600; padding:10px 16px; border-radius:999px; color:var(--ink);
+      border:1px solid var(--border); background:#fff; transition:background .15s ease, box-shadow .15s ease, transform .05s ease; white-space:nowrap; }
     nav a:hover, nav button:hover{ background:#f9fafb; }
     nav .btn{ border:0; background: var(--brand); color:#fff; }
     nav .btn:hover{ filter: brightness(0.95); }
-    .badge{ padding: 5px 12px; border-radius: 999px; font-size: var(--fs-sm); font-weight: 800; background:#eef2ff; border:1px solid #d6dcff; color:#111827; }
-    .hidden{ display:none !important; }
+    .badge{ padding:5px 12px; border-radius:999px; font-size:var(--fs-sm); font-weight:800;
+      background:#eef2ff; border:1px solid #d6dcff; color:#111827; }
 
-    /* ===== Hero (Home) ===== */
-    .hero{
+    /* =============================================================
+       PAGE BANDS ("Hero" look) — used for BOTH pages
+       -------------------------------------------------------------
+       Apply the same peach grid background so HOME and EXTRACT
+       feel like separate pages but share the visual language.
+    =============================================================== */
+    .page-band{
       padding: 70px 0 88px;
       background:
         repeating-linear-gradient(0deg, transparent, transparent 46px, var(--grid-line) 47px, transparent 48px),
         repeating-linear-gradient(90deg, transparent, transparent 46px, var(--grid-line) 47px, transparent 48px),
         var(--hero-peach);
     }
-    .grid{
-      display:grid; grid-template-columns: 1.05fr 0.95fr; gap: 28px; align-items: stretch;
-    }
-    .card{
-      background: var(--panel); border: 1px solid var(--border);
-      border-radius: var(--radius-lg); box-shadow: var(--shadow);
-      padding: 30px;
-      display:flex; flex-direction:column; justify-content:space-between;
-    }
-    .h1{ font-size: var(--fs-xxl); line-height: 1.05; margin: 0 0 14px; letter-spacing: -0.02em; }
-    .body-lg{ font-size: var(--fs-lg); color: var(--muted); }
-    .actions{ display:flex; gap: 14px; margin-top: 20px; flex-wrap: wrap; }
-    .btn{
-      display:inline-flex; align-items:center; gap:8px;
-      background: var(--brand); color: #fff; border: 0; cursor: pointer;
-      padding: 13px 18px; border-radius: 14px; font-weight: 800;
-      box-shadow: 0 10px 20px rgba(17,24,39,.18);
-      transition: transform .05s ease, box-shadow .2s ease, filter .15s ease;
-    }
-    .btn:active{ transform: translateY(1px); box-shadow: 0 3px 10px rgba(0,0,0,.12); }
-    .btn-ghost{ background: #fff; color: var(--ink); border:1px solid var(--border); }
-    .hint{ font-size: var(--fs-sm); color: var(--muted); margin-top: 10px; }
-    .illustration{ background:#fff; border-radius: var(--radius-lg); overflow:hidden; box-shadow: var(--shadow-soft); border:1px solid var(--border); min-height: 360px; display:flex; align-items:center; justify-content:center; }
-    .illustration img{ width:100%; height:100%; object-fit: cover; }
 
-    /* ===== Extractor Page ===== */
-    .section{ padding: 48px 0 92px; }
-    .panel{ background: var(--panel-alt); border:1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); padding:24px; }
-    .h2{ font-size: var(--fs-xl); margin: 0 0 12px; letter-spacing: -0.01em; }
-    .row{ display:flex; gap: 12px; align-items:center; flex-wrap: wrap; }
-    .row .btn{ margin-right: 4px; }
-    .row .btn + .btn{ margin-left: 6px; }
-    .actions-bar{ display:flex; flex-wrap:wrap; gap: 14px; margin-top: 12px; }
-    .status{ font-size: var(--fs-sm); color: var(--muted); margin-top: 8px; }
-    .log{
-      background: #fff; color: #0d1b2a; border-radius: 12px; padding: 12px;
-      border:1px solid var(--border); margin-top: 14px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      white-space: pre-wrap; max-height: 340px; overflow:auto;
+    /* =============================================================
+       HOME PAGE CONTENT
+       ------------------------------------------------------------- */
+    .grid{ display:grid; grid-template-columns: 1.05fr 0.95fr; gap:28px; align-items:stretch; }
+    .card{ background: var(--panel); border:1px solid var(--border); border-radius:var(--radius-lg);
+      box-shadow: var(--shadow); padding:30px; display:flex; flex-direction:column; justify-content:space-between; }
+    .h1{ font-size: var(--fs-xxl); line-height:1.05; margin:0 0 14px; letter-spacing:-0.02em; }
+    .body-lg{ font-size: var(--fs-lg); color: var(--muted); }
+    .actions{ display:flex; gap:14px; margin-top:20px; flex-wrap:wrap; }
+    .btn{ display:inline-flex; align-items:center; gap:8px; background: var(--brand-accent);
+      color:#fff; border:0; cursor:pointer; padding:13px 18px; border-radius:14px; font-weight:800;
+      box-shadow:0 10px 20px rgba(17,24,39,.18); transition: transform .05s ease, box-shadow .2s ease, filter .15s ease; }
+    .btn:active{ transform: translateY(1px); box-shadow:0 3px 10px rgba(0,0,0,.12); }
+    .btn-ghost, .btn-secondary{
+      background:#fff; color:var(--ink); border:1px solid var(--border); border-radius:14px; padding:12px 16px; font-weight:700;
+      box-shadow:0 4px 8px rgba(17,24,39,.06); transition: transform .05s ease, box-shadow .2s ease;
     }
-    .badge-small{ background: #eef2ff; color: var(--ink); border-radius: 999px; padding:6px 12px; font-size: var(--fs-sm); font-weight:800; }
-    .table-wrap{ overflow:auto; border:1px solid var(--border); border-radius: 12px; margin-top: 16px; background:#fff; }
+    .btn-ghost:active, .btn-secondary:active{ transform: translateY(1px); box-shadow:0 2px 6px rgba(0,0,0,.12); }
+    .hint{ font-size: var(--fs-sm); color: var(--muted); margin-top:10px; }
+    .illustration{ background:#fff; border-radius:var(--radius-lg); overflow:hidden; box-shadow:var(--shadow-soft);
+      border:1px solid var(--border); min-height:360px; display:flex; align-items:center; justify-content:center; }
+    .illustration img{ width:100%; height:100%; object-fit:cover; }
+
+    /* =============================================================
+       EXTRACTOR PAGE CONTENT (inner page)
+       -------------------------------------------------------------
+       - Same background style via .page-band
+       - Panel mirrors home cards for consistency
+    =============================================================== */
+    .panel{ background: var(--panel-alt); border:1px solid var(--border); border-radius:var(--radius-lg); box-shadow: var(--shadow); padding:24px; }
+    .h2{ font-size: var(--fs-xl); margin:0 0 12px; letter-spacing:-0.01em; }
+    .row{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    .actions-bar{ display:flex; flex-wrap:wrap; gap:14px; margin-top:12px; }
+    .status{ font-size: var(--fs-sm); color: var(--muted); margin-top:8px; }
+    .log{ background:#fff; color:#0d1b2a; border-radius:12px; padding:12px; border:1px solid var(--border);
+      margin-top:14px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space:pre-wrap; max-height:340px; overflow:auto; }
+    .badge-small{ background:#eef2ff; color:var(--ink); border-radius:999px; padding:6px 12px; font-size:var(--fs-sm); font-weight:800; }
+    .table-wrap{ overflow:auto; border:1px solid var(--border); border-radius:12px; margin-top:16px; background:#fff; }
     table{ border-collapse: collapse; width:100%; background:#fff; }
     thead th{ position:sticky; top:0; background:#f3f4f6; }
-    th, td{ padding:11px 12px; border-bottom:1px solid #e5e7eb; text-align:left; white-space: nowrap; }
-    th{ font-size: var(--fs-sm); letter-spacing: .02em; }
+    th, td{ padding:11px 12px; border-bottom:1px solid #e5e7eb; text-align:left; white-space:nowrap; }
+    th{ font-size: var(--fs-sm); letter-spacing:.02em; }
     td{ font-size: var(--fs-md); }
 
-    /* ===== Footer ===== */
+    /* =============================================================
+       FOOTER
+       ------------------------------------------------------------- */
     footer{ background:#fff; border-top:1px solid var(--border); }
-    .footer-wrap{ display:flex; align-items:center; justify-content:space-between; padding: 18px 0; flex-wrap:wrap; gap:12px; }
-    .contact{ display:flex; align-items:center; gap: 10px; color: var(--muted); }
-    .contact b{ color: var(--ink); }
-    .contact a{ display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius: 10px; background:#fff; border:1px solid var(--border); }
+    .footer-wrap{ display:flex; align-items:center; justify-content:space-between; padding:18px 0; flex-wrap:wrap; gap:12px; }
+    .contact{ display:flex; align-items:center; gap:10px; color:var(--muted); }
+    .contact b{ color:var(--ink); }
+    .contact a{ display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:10px; background:#fff; border:1px solid var(--border); }
     .contact img{ width:18px; height:18px; }
 
-    /* ===== Login Modal (client-side UI, real auth via Worker) ===== */
-    .modal{
-      position:fixed; inset:0; background: rgba(0,0,0,.45);
-      display:none; align-items:center; justify-content:center; z-index: 1000;
-    }
+    /* =============================================================
+       LOGIN MODAL — UI only; real auth at Worker
+       ------------------------------------------------------------- */
+    .modal{ position:fixed; inset:0; background: rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:1000; }
     .modal.show{ display:flex; }
-    .modal-card{
-      width:min(520px, 92vw); background:#fff; border-radius:16px; padding:22px; box-shadow: var(--shadow);
-      border:1px solid var(--border);
-    }
+    .modal-card{ width:min(520px, 92vw); background:#fff; border-radius:16px; padding:22px; box-shadow: var(--shadow); border:1px solid var(--border); }
     .field{ display:flex; flex-direction:column; gap:6px; margin-top:12px; }
-    .field input{
-      border:1px solid var(--border); border-radius: 12px; padding: 11px 12px; font-size: var(--fs-md);
-      outline: none;
-    }
+    .field input{ border:1px solid var(--border); border-radius: 12px; padding: 11px 12px; font-size: var(--fs-md); outline:none; }
     .field input:focus{ border-color: var(--brand-accent); box-shadow: 0 0 0 3px rgba(30,102,255,.12); }
-    .modal-actions{ display:flex; gap:10px; justify-content:flex-end; margin-top: 16px; }
-    .note{ color: var(--muted); font-size: var(--fs-sm); margin-top: 6px; }
+    .modal-actions{ display:flex; gap:10px; justify-content:flex-end; margin-top:16px; }
+    .note{ color: var(--muted); font-size: var(--fs-sm); margin-top:6px; }
 
-    /* ===== Mobile ===== */
+    /* =============================================================
+       MOBILE FORMAT HANDLER (≤ 980px & ≤ 560px)
+       -------------------------------------------------------------
+       - Collapses hero grid to one column
+       - Shortens the long nav label to "Extract"
+       - Ensures buttons wrap and remain tap-friendly
+    =============================================================== */
     @media (max-width: 980px){
       .grid{ grid-template-columns: 1fr; }
-      .illustration{ min-height: 240px; }
-      nav{ gap: 8px; }
+      .illustration{ min-height:240px; }
+      nav{ gap:8px; }
+      .nav-text-full{ display:none; }     /* hide long label */
+      .nav-text-short{ display:inline; }  /* show short label */
     }
+    @media (min-width: 981px){
+      .nav-text-full{ display:inline; }
+      .nav-text-short{ display:none; }
+    }
+    @media (max-width: 560px){
+      nav a, nav button{ padding:8px 12px; }
+      .btn, .btn-ghost, .btn-secondary{ padding:11px 14px; }
+    }
+
+    /* =============================================================
+       ROUTER VISIBILITY CLASSES (switch pages without scrolling)
+       ------------------------------------------------------------- */
+    .view{ display:none; }
+    .view.is-active{ display:block; }
   </style>
 </head>
 
 <body>
 
-  <!-- ====================== HEADER ====================== -->
+  <!-- ====================== HEADER (persistent) ====================== -->
   <header>
     <div class="container header-wrap">
       <div class="brand">
@@ -194,10 +223,13 @@
         <span>Data Extractor</span>
       </div>
 
-      <!-- Two-page navigation via hash anchors -->
+      <!-- NAV: hash links drive the router below -->
       <nav>
         <a class="btn-ghost" href="#home">Home</a>
-        <a class="btn-ghost" href="#extract">Invoice data extraction</a>
+        <a class="btn-ghost" href="#extract">
+          <span class="nav-text-full">Invoice data extraction</span>
+          <span class="nav-text-short">Extract</span>
+        </a>
         <span id="loginBadge" class="badge hidden"></span>
         <button class="btn" id="openLoginBtn">Login</button>
         <button class="btn hidden" id="logoutBtn" style="background:#374151;">Logout</button>
@@ -205,67 +237,73 @@
     </div>
   </header>
 
-  <!-- ====================== HOME ====================== -->
-  <main id="home" class="hero">
-    <div class="container">
-      <div class="grid">
-        <!-- Left content -->
-        <section class="card">
-          <div>
-            <h1 class="h1">Ingest invoices with<br/>next‑gen, AI‑powered OCR</h1>
-            <p class="body-lg">
-              Upload PDF / image (jpeg/jpg/png) / DOCX and get details such as
-              <b>GSTIN</b>, invoice number &amp; date, transaction id, taxable &amp; total amounts,
-              and full tax breakdown in a clean Excel file.
-            </p>
-          </div>
-          <div>
-            <div class="actions">
-              <a class="btn" href="#extract">Go to invoice data extraction</a>
-              <a class="btn-ghost" href="#contact">Learn more</a>
+  <!-- ====================== HOME (page) ====================== -->
+  <main id="home" class="view is-active">
+    <div class="page-band">
+      <div class="container">
+        <div class="grid">
+          <!-- Left content -->
+          <section class="card">
+            <div>
+              <h1 class="h1"> Extract your files with<br/> AI‑powered OCR</h1>
+              <p class="body-lg">
+                Upload PDF / image (jpeg/jpg/png) / DOCX and get details such as
+                <b>GSTIN</b>, invoice number &amp; date, transaction id, taxable &amp; total amounts,
+                and full tax breakdown in a clean Excel file.
+              </p>
             </div>
-            <p class="hint">
-              Tip: Files are processed in memory; nothing is stored on our servers beyond extraction.
-            </p>
-          </div>
-        </section>
+            <div>
+              <div class="actions">
+                <a class="btn" href="#extract">Go to invoice data extraction</a>
+                <a class="btn-secondary" href="#contact">Learn more</a>
+              </div>
+              <p class="hint">
+                Note: We do not store your files. The files are processed in memory and discarded.
+              </p>
+            </div>
+          </section>
 
-        <!-- Right visual (fallback to Unsplash if hero.png missing) -->
-        <aside class="illustration">
-          <img id="heroImg" src="assets/hero.png" alt="AI invoice OCR illustration"
-               onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1551836022-4c4c79ecde51?q=80&w=1470&auto=format&fit=crop';" />
-        </aside>
+          <!-- Right visual (hero) -->
+          <aside class="illustration">
+            <img id="heroImg" src="assets/hero.png" alt="AI invoice OCR illustration"
+                 onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1551836022-4c4c79ecde51?q=80&w=1470&auto=format&fit=crop';" />
+          </aside>
+        </div>
       </div>
     </div>
   </main>
 
-  <!-- ====================== EXTRACTOR ====================== -->
-  <section id="extract" class="section">
-    <div class="container">
-      <div class="panel">
-        <h2 class="h2">Invoice Extractor</h2>
-        <p class="body-lg" style="margin:0 0 10px;">
-          Upload PDF / image (jpg/jpeg/png) / DOCX. One PDF may contain up to
-          <b>10 pages</b>. Public trial is limited (<span id="trialInfo"></span>).
-        </p>
+  <!-- ====================== EXTRACT (inner page) ====================== -->
+  <section id="extract" class="view">
+    <div class="page-band">
+      <div class="container">
+        <div class="panel">
+          <h2 class="h2">Invoice Extractor</h2>
+          <p class="body-lg" style="margin:0 0 10px;">
+            Upload PDF / image (jpg/jpeg/png) / DOCX. One PDF may contain up to
+            <b>10 pages</b>. Public trial is limited (<span id="trialInfo"></span>).
+          </p>
 
-        <div class="row" style="margin-top:10px;">
-          <input id="fileInput" type="file" multiple accept=".pdf,.docx,image/*" />
-          <button id="extractBtn" class="btn" style="background:var(--brand-accent);">Extract</button>
-          <span id="rowsBadge" class="badge-small" hidden>0 rows</span>
-        </div>
+          <div class="row" style="margin-top:10px;">
+            <input id="fileInput" type="file" multiple accept=".pdf,.docx,image/*" />
+            <button id="extractBtn" class="btn">Extract</button>
+            <span id="rowsBadge" class="badge-small" hidden>0 rows</span>
+          </div>
 
-        <div class="actions-bar">
-          <button id="reviewBtn" class="btn-ghost">Review Excel</button>
-          <button id="downloadBtn" class="btn-ghost">Download Excel</button>
-          <button id="resetBtn" class="btn-ghost">Reset session</button>
-        </div>
+          <!-- Secondary action row — styled to match Extract (pill/ghost) -->
+          <div class="actions-bar">
+            <button id="reviewBtn" class="btn-secondary">Review Excel</button>
+            <button id="downloadBtn" class="btn-secondary">Download Excel</button>
+            <button id="resetBtn" class="btn-secondary">Reset session</button>
+          </div>
 
-        <div id="status" class="status"></div>
-        <pre id="log" class="log" hidden></pre>
+          <div id="status" class="status"></div>
+          <pre id="log" class="log" hidden></pre>
 
-        <div id="tableWrap" class="table-wrap" hidden>
-          <table id="previewTable"></table>
+          <!-- Preview table -->
+          <div id="tableWrap" class="table-wrap" hidden>
+            <table id="previewTable"></table>
+          </div>
         </div>
       </div>
     </div>
@@ -287,69 +325,53 @@
     </div>
   </footer>
 
-  <!-- ====================== LOGIN MODAL ====================== -->
-  <div id="loginModal" class="modal" aria-hidden="true">
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
-      <h3 id="loginTitle" class="h2" style="margin:0;">Login</h3>
-      <p class="body-lg" style="margin:6px 0 6px;">
-        Please contact us for full service and support.
-      </p>
-
-      <div class="field">
-        <label for="username">Username</label>
-        <input id="username" type="text" autocomplete="username" placeholder="your@email.com or username" />
-      </div>
-      <div class="field">
-        <label for="password">Password</label>
-        <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" />
-      </div>
-      <div class="note" id="loginMsg"></div>
-
-      <div class="modal-actions">
-        <button class="btn-ghost" id="closeLoginBtn">Cancel</button>
-        <button class="btn" id="doLoginBtn">Login</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ====================== APP SCRIPT ====================== -->
+  <!-- =============================================================
+       APP SCRIPT
+       -------------------------------------------------------------
+       Responsibilities:
+       1) CONFIG + TOKENs: endpoint & limits
+       2) ROUTER: Treat sections as "pages" via hash (#home / #extract)
+       3) LOGIN: UI only; calls Worker /api/login + /api/logout
+       4) TRIAL GATING: 3 attempts, 1-page PDF, per browser (localStorage)
+       5) FILE PIPELINE: PDF→images, IMG compress, DOCX→text
+       6) NETWORK: POST to Worker with credentials; friendly CORS errors
+       7) TABLE + DOWNLOAD: dynamic header; XLSX, CSV fallback
+       8) MOBILE: see CSS "MOBILE FORMAT HANDLER" for layout changes
+  =============================================================== -->
   <script>
-    /******************************************************************
-     * CONFIG — Change these safely
-     ******************************************************************/
-    // Your Workers.dev (remote) endpoint. For local dev, set to "http://127.0.0.1:8787"
+    /********************** 1) CONFIG + TOKENS **********************/
     const WORKER_ENDPOINT = "https://invoice-worker.deepak72855.workers.dev";
-
-    // Trial limits (public use before login)
-    const TRIAL_MAX_ATTEMPTS = 3;   // total files you can process when not logged in
-    const TRIAL_MAX_PAGES    = 1;   // each PDF must be <= this page count in trial
-    const MAX_PAGES_PER_PDF  = 10;  // hard page limit enforced by UI
-
-    // Client-side image processing
-    const JPEG_QUALITY       = 0.7;       // compression (0..1)
-    const TARGET_WIDTH       = 1300;      // long-edge resize for images
-
-    // localStorage keys
+    const TRIAL_MAX_ATTEMPTS = 3;   // public attempts before login
+    const TRIAL_MAX_PAGES    = 1;   // per-PDF page cap in trial
+    const MAX_PAGES_PER_PDF  = 10;  // hard UI cap
+    const JPEG_QUALITY       = 0.7; // client compression (0..1)
+    const TARGET_WIDTH       = 1300;// image resize target
     const LS_TRIAL_COUNT   = "de_trial_count_v1";
-    const LS_LOGGED_IN     = "de_logged_in_v1"; // UI hint only; server remains source of truth
-    const LS_FP            = "de_trial_fingerprint_v1"; // simple fingerprint to reduce resets
+    const LS_LOGGED_IN     = "de_logged_in_v1";
+    const LS_FP            = "de_trial_fingerprint_v1";
 
-    /******************************************************************
-     * Simple fingerprint (user agent + day salt)
-     ******************************************************************/
-    (function ensureFingerprint(){
-      try{
-        if(!localStorage.getItem(LS_FP)){
-          const salt = new Date().toISOString().slice(0,10); // day-level salt
-          const fp = btoa([navigator.userAgent, salt].join("|"));
-          localStorage.setItem(LS_FP, fp);
-        }
-      }catch{} // ignore
-    })();
+    /********************** 2) ROUTER (hash pages) *******************
+     * Fake inner pages by toggling .view.is-active.
+     * Supported routes: #home (default), #extract
+     ****************************************************************/
+    const routes = ["home","extract"];
+    function showView(name){
+      routes.forEach(r => {
+        const el = document.getElementById(r);
+        if(!el) return;
+        el.classList.toggle("is-active", r===name);
+      });
+      // Scroll to top on "navigation"
+      window.scrollTo({ top: 0, behavior: "instant" });
+    }
+    function handleHash(){
+      const name = (location.hash || "#home").replace("#","");
+      showView(routes.includes(name) ? name : "home");
+    }
+    window.addEventListener("hashchange", handleHash);
+    document.addEventListener("DOMContentLoaded", handleHash);
 
-    /******************************************************************
-     * DOM shortcuts
-     ******************************************************************/
+    /********************** 3) LOGIN (Worker-backed) *****************/
     const $ = sel => document.querySelector(sel);
     const statusEl = $('#status');
     const logEl    = $('#log');
@@ -363,9 +385,6 @@
     const addLog = (msg) => { logEl.hidden = false; logEl.textContent += msg + "\\n"; };
     const setStatus = (msg) => { statusEl.textContent = msg; };
 
-    /******************************************************************
-     * LOGIN (UI talks to Worker real auth)
-     ******************************************************************/
     function isLoggedIn(){ return localStorage.getItem(LS_LOGGED_IN) === "1"; }
     function setLoggedIn(val){
       localStorage.setItem(LS_LOGGED_IN, val ? "1" : "0");
@@ -390,15 +409,10 @@
       }
       return resp.json();
     }
-
     async function doLogout(){
-      try{
-        await fetch(WORKER_ENDPOINT + "/api/logout", { method: "POST", credentials: "include" });
-      }catch{ /* ignore */ }
-      setLoggedIn(false);
-      setStatus("Logged out.");
+      try{ await fetch(WORKER_ENDPOINT + "/api/logout", { method:"POST", credentials:"include" }); }catch{}
+      setLoggedIn(false); setStatus("Logged out.");
     }
-
     $('#openLoginBtn').addEventListener('click', () => { $('#loginModal').classList.add('show'); });
     $('#closeLoginBtn').addEventListener('click', () => { $('#loginModal').classList.remove('show'); });
     $('#doLoginBtn').addEventListener('click', async () => {
@@ -417,6 +431,16 @@
     });
     logoutBtn.addEventListener('click', doLogout);
 
+    /********************** 4) TRIAL GATING *************************/
+    (function ensureFingerprint(){
+      try{
+        if(!localStorage.getItem(LS_FP)){
+          const salt = new Date().toISOString().slice(0,10);
+          const fp = btoa([navigator.userAgent, salt].join("|"));
+          localStorage.setItem(LS_FP, fp);
+        }
+      }catch{} /* ignore */
+    })();
     function refreshTrialBanner(){
       if(isLoggedIn()){
         trialInfo.textContent = "Logged-in (no trial limits)";
@@ -425,95 +449,76 @@
         trialInfo.textContent = `${Math.max(0, remaining)} attempt(s) left • 1 page max per PDF`;
       }
     }
-
     function bumpTrial(){
       localStorage.setItem(LS_TRIAL_COUNT, String(Number(localStorage.getItem(LS_TRIAL_COUNT) || 0) + 1));
     }
 
-    /******************************************************************
-     * FILE HELPERS (PDF → JPEG, IMG compress, DOCX → text)
-     ******************************************************************/
+    /********************** 5) FILE PIPELINE ************************
+     * - fileToDataUrl         : File → base64 data URL
+     * - pdfToImages           : PDF → array of JPEG data URLs
+     * - imageToCompressed...  : compress/resize image
+     * - docxToText            : DOCX → plain text
+    ****************************************************************/
     function fileToDataUrl(file){
-      return new Promise(res=>{
-        const r = new FileReader();
-        r.onload = e => res(e.target.result);
-        r.readAsDataURL(file);
-      });
+      return new Promise(res=>{ const r = new FileReader(); r.onload = e => res(e.target.result); r.readAsDataURL(file); });
     }
-
     async function pdfToImages(file){
       const dataUrl = await fileToDataUrl(file);
       const pdf = await pdfjsLib.getDocument({ url: dataUrl }).promise;
-
-      // Trial guard: enforce <= 1 page when not logged in
       if(!isLoggedIn() && pdf.numPages > TRIAL_MAX_PAGES){
         throw new Error(`Trial mode allows only ${TRIAL_MAX_PAGES} page per PDF.`);
       }
-
       const pages = Math.min(pdf.numPages, MAX_PAGES_PER_PDF);
       const out = [];
       for (let p=1; p<=pages; p++){
         const page = await pdf.getPage(p);
         const viewport = page.getViewport({ scale: 1.5 });
-        const scale = TARGET_WIDTH / viewport.width;
+        const scale = 1300 / viewport.width;
         const vp = page.getViewport({ scale });
-
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        canvas.width = Math.floor(vp.width);
-        canvas.height = Math.floor(vp.height);
-
+        canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
         await page.render({ canvasContext: ctx, viewport: vp }).promise;
         out.push(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
       }
       return out;
     }
-
     async function imageToCompressedDataUrl(file){
       const dataUrl = await fileToDataUrl(file);
       const img = new Image();
       await new Promise(res=>{ img.onload = res; img.src = dataUrl; });
       const scale = img.width > TARGET_WIDTH ? TARGET_WIDTH / img.width : 1;
       const canvas = document.createElement('canvas');
-      canvas.width = Math.floor(img.width * scale);
-      canvas.height = Math.floor(img.height * scale);
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.width = Math.floor(img.width * scale); canvas.height = Math.floor(img.height * scale);
+      const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       return canvas.toDataURL('image/jpeg', JPEG_QUALITY);
     }
-
     async function docxToText(file){
       const arrayBuffer = await file.arrayBuffer();
       const result = await window.mammoth.extractRawText({ arrayBuffer });
       return result.value || "";
     }
 
-    /******************************************************************
-     * POST to Worker (auth cookie included)
-     ******************************************************************/
+    /********************** 6) NETWORK (Worker POSTs) ***************
+     * Always send credentials to include the session cookie.
+     * Friendlier error for preflight/CORS failures.
+    ****************************************************************/
     async function postToWorker(payload){
       const form = new FormData();
-      if(payload.images?.length){
-        payload.images.forEach(u => form.append('images_dataurl[]', u));
-      }
-      if(payload.docText){
-        form.append('doc_text', payload.docText);
-      }
+      if(payload.images?.length) payload.images.forEach(u => form.append('images_dataurl[]', u));
+      if(payload.docText) form.append('doc_text', payload.docText);
 
       try{
         const resp = await fetch(`${WORKER_ENDPOINT}/api/extract`, {
           method:'POST', body: form, credentials:'include'
         });
-        if(resp.status === 401){
-          throw new Error("Unauthorized. Please log in to continue.");
-        }
+        if(resp.status === 401) throw new Error("Unauthorized. Please log in to continue.");
         if(!resp.ok){
           let t=""; try{ t = await resp.text(); }catch(e){}
           throw new Error(`Worker ${resp.status}: ${t}`);
         }
         return resp.json();
       } catch(err){
-        // Convert fetch/network/CORS errors into friendlier message
         if (err && (err.name === "TypeError" || String(err).includes("Failed to fetch"))) {
           throw new Error("Network/CORS error. Ensure the Worker allows your GitHub Pages origin and handles OPTIONS with Access-Control-Allow-Credentials: true.");
         }
@@ -521,11 +526,8 @@
       }
     }
 
-    /******************************************************************
-     * REVIEW TABLE + EXCEL DOWNLOAD (dynamic header)
-     ******************************************************************/
+    /********************** 7) TABLE + DOWNLOAD *********************/
     const rows = []; // appended until reset
-
     function rowFromJson(json, src){
       const s = json?.seller || {};
       const i = json?.invoice || {};
@@ -545,7 +547,6 @@
         SOURCE_FILE:    src || null
       };
     }
-
     function renderTable(){
       if(!rows.length){ tableWrap.hidden = true; return; }
       const cols = Object.keys(rows[0]);
@@ -556,7 +557,6 @@
       rowsBadge.hidden = false;
       rowsBadge.textContent = `${rows.length} row(s)`;
     }
-
     function downloadExcel(){
       if(!rows.length){ setStatus("Nothing to download yet."); return; }
       try{
@@ -565,25 +565,18 @@
         XLSX.utils.book_append_sheet(wb, ws, "Invoices");
         XLSX.writeFile(wb, "invoices.xlsx");
       }catch(e){
-        // Fallback to CSV
         const headers = Object.keys(rows[0]);
-        const csv = [headers.join(",")]
-          .concat(rows.map(r=>headers.map(h=>`"${String(r[h]??"").replaceAll('"','""')}"`).join(",")))
-          .join("\n");
+        const csv = [headers.join(",")].concat(
+          rows.map(r=>headers.map(h=>`"${String(r[h]??"").replaceAll('"','""')}"`).join(","))
+        ).join("\n");
         const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = "invoices.csv";
-        a.click();
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "invoices.csv"; a.click();
       }
     }
 
-    /******************************************************************
-     * MAIN: Extract flow
-     ******************************************************************/
+    /********************** 8) MAIN EXTRACT FLOW ********************/
     $('#extractBtn').addEventListener('click', async () => {
       try{
-        // Trial guard (count)
         if(!isLoggedIn()){
           const tries = Number(localStorage.getItem(LS_TRIAL_COUNT) || 0);
           if(tries >= TRIAL_MAX_ATTEMPTS){
@@ -591,7 +584,6 @@
             throw new Error("Trial limit reached. Please login for full access.");
           }
         }
-
         const files = Array.from($('#fileInput').files || []);
         if(!files.length) throw new Error("Please choose at least one file.");
         setStatus("Processing…"); logEl.hidden = true; tableWrap.hidden = true;
@@ -602,39 +594,23 @@
 
           if (f.type === "application/pdf"){
             const imgs = await pdfToImages(f);
-            payload.images = imgs;
-            addLog(`  PDF pages → ${imgs.length} image(s)`);
+            payload.images = imgs; addLog(`  PDF pages → ${imgs.length} image(s)`);
           } else if (f.type.startsWith("image/")){
-            payload.images = [ await imageToCompressedDataUrl(f) ];
-            addLog("  Image compressed");
+            payload.images = [ await imageToCompressedDataUrl(f) ]; addLog("  Image compressed");
           } else if (f.name.toLowerCase().endsWith(".docx")){
-            payload.docText = await docxToText(f);
-            addLog("  DOCX text extracted");
-          } else {
-            addLog(`  Skipped unsupported file: ${f.name}`);
-            continue;
-          }
+            payload.docText = await docxToText(f); addLog("  DOCX text extracted");
+          } else { addLog(`  Skipped unsupported file: ${f.name}`); continue; }
 
           const json = await postToWorker(payload);
-          rows.push(rowFromJson(json, f.name));
-          addLog("  ✓ Extracted");
-
-          // consume one public attempt per processed file
-          if(!isLoggedIn()){
-            bumpTrial();
-          }
+          rows.push(rowFromJson(json, f.name)); addLog("  ✓ Extracted");
+          if(!isLoggedIn()) bumpTrial(); // consume public attempt
         }
-
         setStatus("Your Excel data is ready. Click “Review Excel” or “Download Excel”.");
-        renderTable();
-        refreshTrialBanner();
+        renderTable(); refreshTrialBanner();
       } catch(err){
-        console.error(err);
-        setStatus(`Error: ${err.message}`);
-        addLog(`Error: ${err.message}`);
+        console.error(err); setStatus(`Error: ${err.message}`); addLog(`Error: ${err.message}`);
       }
     });
-
     $('#reviewBtn').addEventListener('click', renderTable);
     $('#downloadBtn').addEventListener('click', downloadExcel);
     $('#resetBtn').addEventListener('click', () => {
@@ -642,9 +618,10 @@
       setStatus("Session cleared. You can upload new files now.");
     });
 
-    // Init trial banner on load
+    // Init banners & auth UI
     refreshTrialBanner();
     logoutBtn.classList.toggle('hidden', !isLoggedIn());
   </script>
 </body>
 </html>
+
