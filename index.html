@@ -245,7 +245,7 @@
           <!-- Left content -->
           <section class="card">
             <div>
-              <h1 class="h1"> Extract your files with<br/> AI‑powered OCR</h1>
+              <h1 class="h1"> Extract your files data with<br/> AI‑powered OCR</h1>
               <p class="body-lg">
                 Upload PDF / image (jpeg/jpg/png) / DOCX and get details such as
                 <b>GSTIN</b>, invoice number &amp; date, transaction id, taxable &amp; total amounts,
@@ -309,7 +309,7 @@
     </div>
   </section>
 
-  <!-- ====================== FOOTER ====================== -->
+    <!-- ====================== FOOTER ====================== -->
   <footer id="contact">
     <div class="container footer-wrap">
       <div class="tag">© 2025 Data Extractor</div>
@@ -324,6 +324,39 @@
       </div>
     </div>
   </footer>
+
+  <!-- Login modal (UI only – actual auth is done by the Worker) -->
+  <div id="loginModal" class="modal" aria-hidden="true">
+    <div class="modal-card">
+      <h3 class="h2" style="margin:0 0 4px;">Login</h3>
+      <p class="note">Please contact us for full service and support.</p>
+
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" type="text" placeholder="your@email.com or username" />
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" type="password" placeholder="••••••••" />
+      </div>
+
+      <div id="loginMsg" class="note" style="min-height:18px;"></div>
+
+      <div class="modal-actions">
+        <button class="btn-secondary" id="closeLoginBtn">Cancel</button>
+        <button class="btn" id="doLoginBtn">Login</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ensure the modal actually becomes visible when .show is added -->
+  <style>
+    /* If you already have this rule elsewhere, you can omit this block */
+    .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1000;
+             align-items:center; justify-content:center; }
+    .modal.show { display:flex; }
+  </style>
 
   <!-- =============================================================
        APP SCRIPT
@@ -382,24 +415,26 @@
     const loginBadge= $('#loginBadge');
     const logoutBtn= $('#logoutBtn');
 
-    const addLog = (msg) => { logEl.hidden = false; logEl.textContent += msg + "\\n"; };
-    const setStatus = (msg) => { statusEl.textContent = msg; };
+    const addLog = (msg) => { if (logEl) { logEl.hidden = false; logEl.textContent += msg + "\n"; } };
+    const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg; };
 
     function isLoggedIn(){ return localStorage.getItem(LS_LOGGED_IN) === "1"; }
     function setLoggedIn(val){
       localStorage.setItem(LS_LOGGED_IN, val ? "1" : "0");
-      logoutBtn.classList.toggle('hidden', !val);
-      loginBadge.textContent = val ? "Logged in" : "";
-      loginBadge.classList.toggle('hidden', !val);
+      if (logoutBtn) logoutBtn.classList.toggle('hidden', !val);
+      if (loginBadge) {
+        loginBadge.textContent = val ? "Logged in" : "";
+        loginBadge.classList.toggle('hidden', !val);
+      }
       refreshTrialBanner();
     }
 
+    // CHANGED: send JSON (matches your Worker’s handleLogin which expects req.json())
     async function doLogin(u, p){
-      const body = new URLSearchParams({ username: u, password: p });
       const resp = await fetch(WORKER_ENDPOINT + "/api/login", {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: u, password: p }),
         credentials: "include"
       });
       if(!resp.ok){
@@ -413,23 +448,37 @@
       try{ await fetch(WORKER_ENDPOINT + "/api/logout", { method:"POST", credentials:"include" }); }catch{}
       setLoggedIn(false); setStatus("Logged out.");
     }
-    $('#openLoginBtn').addEventListener('click', () => { $('#loginModal').classList.add('show'); });
-    $('#closeLoginBtn').addEventListener('click', () => { $('#loginModal').classList.remove('show'); });
-    $('#doLoginBtn').addEventListener('click', async () => {
-      const u = $('#username').value.trim();
-      const p = $('#password').value;
-      $('#loginMsg').textContent = "";
-      try{
-        if(!u || !p) throw new Error("Enter username and password.");
-        await doLogin(u,p);
-        setLoggedIn(true); $('#loginModal').classList.remove('show');
-        setStatus("Logged in. Trial limits lifted for this browser.");
-      }catch(e){
-        $('#loginMsg').textContent = e.message;
-        $('#loginMsg').style.color = "var(--err)";
-      }
-    });
-    logoutBtn.addEventListener('click', doLogout);
+
+    // NULL-SAFE modal wiring (won’t crash if elements are missing)
+    const loginModal  = $('#loginModal');
+    const openLogin   = $('#openLoginBtn');
+    const closeLogin  = $('#closeLoginBtn');
+    const doLoginBtn  = $('#doLoginBtn');
+
+    if (openLogin && loginModal) {
+      openLogin.addEventListener('click', () => loginModal.classList.add('show'));
+    }
+    if (closeLogin && loginModal) {
+      closeLogin.addEventListener('click', () => loginModal.classList.remove('show'));
+    }
+    if (doLoginBtn) {
+      doLoginBtn.addEventListener('click', async () => {
+        const uEl = $('#username'), pEl = $('#password'), msgEl = $('#loginMsg');
+        const u = (uEl && uEl.value || "").trim();
+        const p = (pEl && pEl.value) || "";
+        if (msgEl) { msgEl.textContent = ""; }
+        try{
+          if(!u || !p) throw new Error("Enter username and password.");
+          await doLogin(u,p);
+          setLoggedIn(true);
+          if (loginModal) loginModal.classList.remove('show');
+          setStatus("Logged in. Trial limits lifted for this browser.");
+        }catch(e){
+          if (msgEl) { msgEl.textContent = e.message; msgEl.style.color = "var(--err)"; }
+        }
+      });
+    }
+    if (logoutBtn) logoutBtn.addEventListener('click', doLogout);
 
     /********************** 4) TRIAL GATING *************************/
     (function ensureFingerprint(){
@@ -442,6 +491,7 @@
       }catch{} /* ignore */
     })();
     function refreshTrialBanner(){
+      if(!trialInfo) return;
       if(isLoggedIn()){
         trialInfo.textContent = "Logged-in (no trial limits)";
       } else {
@@ -453,12 +503,7 @@
       localStorage.setItem(LS_TRIAL_COUNT, String(Number(localStorage.getItem(LS_TRIAL_COUNT) || 0) + 1));
     }
 
-    /********************** 5) FILE PIPELINE ************************
-     * - fileToDataUrl         : File → base64 data URL
-     * - pdfToImages           : PDF → array of JPEG data URLs
-     * - imageToCompressed...  : compress/resize image
-     * - docxToText            : DOCX → plain text
-    ****************************************************************/
+    /********************** 5) FILE PIPELINE ************************/
     function fileToDataUrl(file){
       return new Promise(res=>{ const r = new FileReader(); r.onload = e => res(e.target.result); r.readAsDataURL(file); });
     }
@@ -472,8 +517,7 @@
       const out = [];
       for (let p=1; p<=pages; p++){
         const page = await pdf.getPage(p);
-        const viewport = page.getViewport({ scale: 1.5 });
-        const scale = 1300 / viewport.width;
+        const scale = TARGET_WIDTH / page.getViewport({ scale: 1 }).width;
         const vp = page.getViewport({ scale });
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
@@ -499,10 +543,7 @@
       return result.value || "";
     }
 
-    /********************** 6) NETWORK (Worker POSTs) ***************
-     * Always send credentials to include the session cookie.
-     * Friendlier error for preflight/CORS failures.
-    ****************************************************************/
+    /********************** 6) NETWORK (Worker POSTs) ***************/
     async function postToWorker(payload){
       const form = new FormData();
       if(payload.images?.length) payload.images.forEach(u => form.append('images_dataurl[]', u));
@@ -548,14 +589,13 @@
       };
     }
     function renderTable(){
-      if(!rows.length){ tableWrap.hidden = true; return; }
+      if(!rows.length){ if(tableWrap) tableWrap.hidden = true; return; }
       const cols = Object.keys(rows[0]);
       const thead = `<thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>`;
       const tbody = `<tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${r[c]??''}</td>`).join('')}</tr>`).join('')}</tbody>`;
-      table.innerHTML = thead + tbody;
-      tableWrap.hidden = false;
-      rowsBadge.hidden = false;
-      rowsBadge.textContent = `${rows.length} row(s)`;
+      if (table) table.innerHTML = thead + tbody;
+      if (tableWrap) tableWrap.hidden = false;
+      if (rowsBadge) { rowsBadge.hidden = false; rowsBadge.textContent = `${rows.length} row(s)`; }
     }
     function downloadExcel(){
       if(!rows.length){ setStatus("Nothing to download yet."); return; }
@@ -575,53 +615,56 @@
     }
 
     /********************** 8) MAIN EXTRACT FLOW ********************/
-    $('#extractBtn').addEventListener('click', async () => {
-      try{
-        if(!isLoggedIn()){
-          const tries = Number(localStorage.getItem(LS_TRIAL_COUNT) || 0);
-          if(tries >= TRIAL_MAX_ATTEMPTS){
-            $('#openLoginBtn').click();
-            throw new Error("Trial limit reached. Please login for full access.");
+    const extractBtn = $('#extractBtn');
+    if (extractBtn) {
+      extractBtn.addEventListener('click', async () => {
+        try{
+          if(!isLoggedIn()){
+            const tries = Number(localStorage.getItem(LS_TRIAL_COUNT) || 0);
+            if(tries >= TRIAL_MAX_ATTEMPTS){
+              if (openLogin) openLogin.click();
+              throw new Error("Trial limit reached. Please login for full access.");
+            }
           }
+          const fileInput = $('#fileInput');
+          const files = Array.from(fileInput?.files || []);
+          if(!files.length) throw new Error("Please choose at least one file.");
+          setStatus("Processing…"); if(logEl) logEl.hidden = true; if(tableWrap) tableWrap.hidden = true;
+
+          for (const f of files){
+            addLog(`• Processing “${f.name}” …`);
+            let payload = { images:[], docText:"" };
+
+            if (f.type === "application/pdf"){
+              const imgs = await pdfToImages(f);
+              payload.images = imgs; addLog(`  PDF pages → ${imgs.length} image(s)`);
+            } else if (f.type.startsWith("image/")){
+              payload.images = [ await imageToCompressedDataUrl(f) ]; addLog("  Image compressed");
+            } else if (f.name.toLowerCase().endsWith(".docx")){
+              payload.docText = await docxToText(f); addLog("  DOCX text extracted");
+            } else { addLog(`  Skipped unsupported file: ${f.name}`); continue; }
+
+            const json = await postToWorker(payload);
+            rows.push(rowFromJson(json, f.name)); addLog("  ✓ Extracted");
+            if(!isLoggedIn()) bumpTrial(); // consume public attempt
+          }
+          setStatus("Your Excel data is ready. Click “Review Excel” or “Download Excel”.");
+          renderTable(); refreshTrialBanner();
+        } catch(err){
+          console.error(err); setStatus(`Error: ${err.message}`); addLog(`Error: ${err.message}`);
         }
-        const files = Array.from($('#fileInput').files || []);
-        if(!files.length) throw new Error("Please choose at least one file.");
-        setStatus("Processing…"); logEl.hidden = true; tableWrap.hidden = true;
-
-        for (const f of files){
-          addLog(`• Processing “${f.name}” …`);
-          let payload = { images:[], docText:"" };
-
-          if (f.type === "application/pdf"){
-            const imgs = await pdfToImages(f);
-            payload.images = imgs; addLog(`  PDF pages → ${imgs.length} image(s)`);
-          } else if (f.type.startsWith("image/")){
-            payload.images = [ await imageToCompressedDataUrl(f) ]; addLog("  Image compressed");
-          } else if (f.name.toLowerCase().endsWith(".docx")){
-            payload.docText = await docxToText(f); addLog("  DOCX text extracted");
-          } else { addLog(`  Skipped unsupported file: ${f.name}`); continue; }
-
-          const json = await postToWorker(payload);
-          rows.push(rowFromJson(json, f.name)); addLog("  ✓ Extracted");
-          if(!isLoggedIn()) bumpTrial(); // consume public attempt
-        }
-        setStatus("Your Excel data is ready. Click “Review Excel” or “Download Excel”.");
-        renderTable(); refreshTrialBanner();
-      } catch(err){
-        console.error(err); setStatus(`Error: ${err.message}`); addLog(`Error: ${err.message}`);
-      }
-    });
-    $('#reviewBtn').addEventListener('click', renderTable);
-    $('#downloadBtn').addEventListener('click', downloadExcel);
-    $('#resetBtn').addEventListener('click', () => {
-      rows.length = 0; table.innerHTML=""; tableWrap.hidden = true; rowsBadge.hidden = true;
+      });
+    }
+    const reviewBtn = $('#reviewBtn'); if (reviewBtn) reviewBtn.addEventListener('click', renderTable);
+    const downloadBtn = $('#downloadBtn'); if (downloadBtn) downloadBtn.addEventListener('click', downloadExcel);
+    const resetBtn = $('#resetBtn'); if (resetBtn) resetBtn.addEventListener('click', () => {
+      rows.length = 0; if (table) table.innerHTML=""; if (tableWrap) tableWrap.hidden = true; if (rowsBadge) rowsBadge.hidden = true;
       setStatus("Session cleared. You can upload new files now.");
     });
 
     // Init banners & auth UI
     refreshTrialBanner();
-    logoutBtn.classList.toggle('hidden', !isLoggedIn());
+    if (logoutBtn) logoutBtn.classList.toggle('hidden', !isLoggedIn());
   </script>
 </body>
 </html>
-

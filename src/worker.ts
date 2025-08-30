@@ -29,14 +29,19 @@ export interface Env {
 // -------------------------
 const JSON_HEADER = { "content-type": "application/json; charset=utf-8" };
 
+// Centralized CORS for both preflight and actual responses.
+// IMPORTANT: We echo *your* GitHub Pages origin and allow credentials.
 function cors(env: Env) {
   return {
     "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN,
     "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Max-Age": "86400",
+    "Vary": "Origin"
   };
 }
+
 function ok(body: any, env: Env, extraHeaders: Record<string, string> = {}) {
   return new Response(
     typeof body === "string" ? body : JSON.stringify(body),
@@ -54,34 +59,46 @@ function getCookie(req: Request, name: string): string | null {
   const m = raw.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
   return m ? decodeURIComponent(m[1]) : null;
 }
-function setCookie(name: string, val: string, opts: {
-  maxAge?: number; path?: string; httpOnly?: boolean; sameSite?: "Lax" | "Strict" | "None"; secure?: boolean;
-} = {}) {
+
+// CHANGED: default SameSite is now "None" so cookies work cross-site.
+// (Browsers require SameSite=None; Secure for 3rd-party/cross-site cookies.)
+function setCookie(
+  name: string,
+  val: string,
+  opts: {
+    maxAge?: number;
+    path?: string;
+    httpOnly?: boolean;
+    sameSite?: "Lax" | "Strict" | "None";
+    secure?: boolean;
+  } = {}
+) {
   const parts = [`${name}=${encodeURIComponent(val)}`];
   if (opts.maxAge != null) parts.push(`Max-Age=${opts.maxAge}`);
   parts.push(`Path=${opts.path ?? "/"}`);
   if (opts.httpOnly) parts.push("HttpOnly");
-  parts.push(`SameSite=${opts.sameSite ?? "Lax"}`);
+  // DEFAULT CHANGED HERE
+  parts.push(`SameSite=${opts.sameSite ?? "None"}`);
   if (opts.secure !== false) parts.push("Secure");
   return parts.join("; ");
 }
+
 async function hashPasswordPBKDF2(password: string, saltB64: string, iterations: number): Promise<string> {
   const enc = new TextEncoder();
   const salt = Uint8Array.from(atob(saltB64), c => c.charCodeAt(0));
   const key = await crypto.subtle.importKey("raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({
-    name: "PBKDF2",
-    hash: "SHA-256",
-    iterations,
-    salt
-  }, key, 256);
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", hash: "SHA-256", iterations, salt },
+    key,
+    256
+  );
   const out = String.fromCharCode(...new Uint8Array(bits));
   return btoa(out); // base64 string to compare with stored hash
 }
 function b64Random(bytes = 32): string {
   const arr = new Uint8Array(bytes);
   crypto.getRandomValues(arr);
-  return btoa(String.fromCharCode(...arr)).replace(/=+$/,"");
+  return btoa(String.fromCharCode(...arr)).replace(/=+$/, "");
 }
 
 // -------------------------
@@ -102,7 +119,9 @@ async function getSession(env: Env, token: string | null) {
 async function createSession(env: Env, username: string, roles: string[] = []) {
   const token = b64Random(24);
   const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
-  await env.USERS.put(SESSION_PREFIX + token, JSON.stringify({ username, exp, roles }), { expirationTtl: SESSION_TTL_SECONDS });
+  await env.USERS.put(SESSION_PREFIX + token, JSON.stringify({ username, exp, roles }), {
+    expirationTtl: SESSION_TTL_SECONDS
+  });
   return { token, exp };
 }
 async function destroySession(env: Env, token: string | null) {
@@ -128,7 +147,7 @@ async function handleLogin(req: Request, env: Env) {
     const password = body.password || "";
     if (!username || !password) return bad({ error: "username and password are required" }, env, 400);
 
-    const doc = await env.USERS.get("user:" + username, "json") as
+    const doc = (await env.USERS.get("user:" + username, "json")) as
       | null
       | { username: string; salt: string; hash: string; iterations: number; expires?: string; roles?: string[] };
 
@@ -140,19 +159,27 @@ async function handleLogin(req: Request, env: Env) {
     }
 
     // Verify password (PBKDF2 fields from your make-user tool)
-    const derived = await hashPasswordPBKDF2(password, doc.salt /* <-- field name */, doc.iterations /* <-- field name */);
-    if (derived !== doc.hash /* <-- field name */) {
+    const derived = await hashPasswordPBKDF2(password, doc.salt, doc.iterations);
+    if (derived !== doc.hash) {
       return bad({ error: "invalid_credentials" }, env, 401);
     }
 
     // Create session
     const session = await createSession(env, username, doc.roles ?? []);
     const cookie = setCookie(SESSION_COOKIE, session.token, {
-      httpOnly: true, sameSite: "Lax", secure: true, maxAge: SESSION_TTL_SECONDS
+      httpOnly: true,
+      sameSite: "None", // CHANGED
+      secure: true,
+      maxAge: SESSION_TTL_SECONDS
     });
 
-    // Also reset trial counter upon login
-    const clearTrial = setCookie(TRIAL_COOKIE, "0", { httpOnly: true, sameSite: "Lax", secure: true, maxAge: 0 });
+    // Reset trial counter upon login
+    const clearTrial = setCookie(TRIAL_COOKIE, "0", {
+      httpOnly: true,
+      sameSite: "None", // CHANGED
+      secure: true,
+      maxAge: 0
+    });
 
     return ok({ ok: true, username }, env, { "Set-Cookie": `${cookie}, ${clearTrial}` });
   } catch (e: any) {
@@ -163,7 +190,12 @@ async function handleLogin(req: Request, env: Env) {
 async function handleLogout(req: Request, env: Env) {
   const token = getCookie(req, SESSION_COOKIE);
   await destroySession(env, token);
-  const clear = setCookie(SESSION_COOKIE, "", { httpOnly: true, sameSite: "Lax", secure: true, maxAge: 0 });
+  const clear = setCookie(SESSION_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "None", // CHANGED
+    secure: true,
+    maxAge: 0
+  });
   return ok({ ok: true }, env, { "Set-Cookie": clear });
 }
 
@@ -174,7 +206,10 @@ type AuthResult =
   | { kind: "session"; username: string; roles: string[] }
   | { kind: "trial"; count: number };
 
-async function guardExtract(req: Request, env: Env): Promise<{ allowed: boolean; mode?: AuthResult; headers?: Record<string,string>; error?: Response }> {
+async function guardExtract(
+  req: Request,
+  env: Env
+): Promise<{ allowed: boolean; mode?: AuthResult; headers?: Record<string, string>; error?: Response }> {
   const sessToken = getCookie(req, SESSION_COOKIE);
   const sess = await getSession(env, sessToken);
   if (sess && sess.exp > Math.floor(Date.now() / 1000)) {
@@ -189,7 +224,12 @@ async function guardExtract(req: Request, env: Env): Promise<{ allowed: boolean;
   }
   // Increment trial cookie for this response
   const newCount = used + 1;
-  const cookie = setCookie(TRIAL_COOKIE, String(newCount), { httpOnly: true, sameSite: "Lax", secure: true, maxAge: 60 * 60 * 24 * 7 });
+  const cookie = setCookie(TRIAL_COOKIE, String(newCount), {
+    httpOnly: true,
+    sameSite: "None", // CHANGED
+    secure: true,
+    maxAge: 60 * 60 * 24 * 7
+  });
   return { allowed: true, mode: { kind: "trial", count: newCount }, headers: { "Set-Cookie": cookie } };
 }
 
@@ -197,10 +237,6 @@ async function guardExtract(req: Request, env: Env): Promise<{ allowed: boolean;
 // 4) Multipart parsing helpers for extract
 // -------------------------
 async function parseFormData(request: Request) {
-  const ct = request.headers.get("content-type") || "";
-  if (!/multipart\/form-data/i.test(ct)) {
-    // Allow JSON as well if needed in future
-  }
   const form = await request.formData();
   const imgs: string[] = [];
   for (const [key, value] of form.entries()) {
@@ -214,13 +250,10 @@ async function parseFormData(request: Request) {
 // 5) GPT extraction call (Responses API)
 // -------------------------
 async function extractWithGPT(env: Env, parts: { imgs: string[]; docText: string }) {
-  // Compose content
   const content: any[] = [];
-  // Text instructions
   content.push({
     type: "text",
-    text:
-`You are an invoice parser for Indian GST invoices.
+    text: `You are an invoice parser for Indian GST invoices.
 Return only this JSON fields:
 {
   "seller": { "company_name": string, "gstin": string, "address": string },
@@ -228,25 +261,22 @@ Return only this JSON fields:
   "taxes": [ { "type": "CGST|SGST|IGST", "rate_percent": number, "amount": number } ],
   "amounts": { "taxable_amount": number, "total_amount": number }
 }
-Use DD-MM-YYYY date format. If a field is missing, return an empty string.
-`
+Use DD-MM-YYYY date format. If a field is missing, return an empty string.`
   });
-  // Images (data URLs)
   for (const d of parts.imgs) content.push({ type: "input_image", image_url: d });
-  // Optional DOCX raw text (if provided by client-side)
   if (parts.docText?.trim()) content.push({ type: "text", text: "Raw extracted text:\n" + parts.docText.slice(0, 10000) });
 
   const body = {
-    model: "gpt-4o-mini", // you can swap later if needed
+    model: "gpt-4o-mini",
     input: [{ role: "user", content }],
     temperature: 0,
-    text: { format: "json" } // enforce JSON
+    text: { format: "json" }
   };
 
   const resp = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify(body)
@@ -257,12 +287,10 @@ Use DD-MM-YYYY date format. If a field is missing, return an empty string.
     throw new Error(`OpenAI error: ${resp.status} ${t}`);
   }
   const data = await resp.json<any>();
-  // Responses API returns structured output; `output_text` is convenient
   const payload = data?.output_text ?? data?.output?.[0]?.content?.[0]?.text ?? "{}";
   try {
     return JSON.parse(payload);
   } catch {
-    // if it is already object
     return payload;
   }
 }
@@ -278,18 +306,19 @@ async function handleExtract(req: Request, env: Env) {
   const { imgs, docText } = await parseFormData(req);
 
   // Trial restriction: max 1 page (1 image) on trial
-  if (("mode" in guard) && guard.mode?.kind === "trial" && imgs.length > 1) {
+  if ("mode" in guard && guard.mode?.kind === "trial" && imgs.length > 1) {
     return bad({ error: "trial_one_page_only" }, env, 403);
   }
 
-  // Optional small safety: cap total images (e.g., 10)
   if (imgs.length > 10) {
     return bad({ error: "too_many_pages" }, env, 400);
   }
 
-  // Call GPT
   const json = await extractWithGPT(env, { imgs, docText });
-  return new Response(JSON.stringify(json), { status: 200, headers: { ...JSON_HEADER, ...cors(env), ...extraHeaders } });
+  return new Response(JSON.stringify(json), {
+    status: 200,
+    headers: { ...JSON_HEADER, ...cors(env), ...extraHeaders }
+  });
 }
 
 // -------------------------
@@ -304,7 +333,6 @@ export default {
 
     const url = new URL(req.url);
 
-    // Simple “root” hint
     if (url.pathname === "/") {
       return new Response("Use POST /api/extract", { status: 405, headers: cors(env) });
     }
@@ -322,7 +350,6 @@ export default {
 
       return bad({ error: "not_found" }, env, 404);
     } catch (err: any) {
-      // Avoid leaking stack traces
       return bad({ error: "server_error", detail: String(err?.message || err) }, env, 500);
     }
   }
